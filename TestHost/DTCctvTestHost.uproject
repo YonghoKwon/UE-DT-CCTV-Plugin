@@ -1,0 +1,12 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.3",
+	"Category": "",
+	"Description": "Minimal host for DTCctv: loads this repository as Plugins/DTCctv (junction).",
+	"Modules": [
+		{ "Name": "DTCctvTestHost", "Type": "Runtime", "LoadingPhase": "Default" }
+	],
+	"Plugins": [
+		{ "Name": "DTCctv", "Enabled": true }
+	]
+}
