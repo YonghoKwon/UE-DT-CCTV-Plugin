@@ -27,7 +27,7 @@ if (-not $FFmpeg)
 }
 $null = Resolve-Path -LiteralPath $FFmpeg, (Join-Path $Tools 'mediamtx.exe')
 $project = Join-Path $repo 'TestHost\DTCctvTestHost.uproject'
-$descriptor = Get-Content -Raw -LiteralPath $project | ConvertFrom-Json
+$descriptor = Get-Content -Raw -Encoding UTF8 -LiteralPath $project | ConvertFrom-Json
 if (@($descriptor.Plugins | Where-Object { $_.Name -eq 'PixelStreaming' -and $_.Enabled }).Count -ne 1)
 {
 	throw 'PixelStreaming을 켠 TestHost 구성이 필요합니다.'
@@ -59,7 +59,7 @@ function Invoke-DTCctvBuild
 		$unitArgs = '"' + $project + '" -ExecCmds="Automation RunTests DTCctv" -TestExit="Automation Test Queue Empty" -ReportExportPath="' + $unitDir + '" -nullrhi -unattended -nosplash -abslog="' + $logs + '\unit.log"'
 		$unit = Start-DTCctvOwnedProcess -File (Join-Path $Engine 'Engine\Binaries\Win64\UnrealEditor-Cmd.exe') -Arguments $unitArgs -WorkingDirectory $repo -LogPrefix "$logs\unit" -Owned $owned
 		if (-not $unit.Process.WaitForExit(180000) -or $unit.Process.ExitCode -ne 0) { throw 'DTCctv 단위 테스트 실패 또는 제한 시간 초과.' }
-		$unitResult = Get-Content -Raw -LiteralPath "$unitDir\index.json" | ConvertFrom-Json
+		$unitResult = Get-Content -Raw -Encoding UTF8 -LiteralPath "$unitDir\index.json" | ConvertFrom-Json
 		if ($unitResult.succeeded -le 0 -or $unitResult.failed -ne 0 -or $unitResult.notRun -ne 0) { throw '미성공 단위 테스트가 있습니다.' }
 	}
 	finally { Close-DTCctvOwnedProcesses $owned }
@@ -187,8 +187,8 @@ function Invoke-DTCctvLinuxCase
 		}
 		Assert-DTCctvMeasurementIdle -Owned $owned -Force
 		$summary['exit_code'] = $client.Process.ExitCode
-		$loader = Get-Content -Raw -LiteralPath "$logs\$Tag.docker.stdout.log"
-		$gameLog = if (Test-Path -LiteralPath "$case\game.log") { Get-Content -Raw -LiteralPath "$case\game.log" } else { '' }
+		$loader = Get-Content -Raw -Encoding UTF8 -LiteralPath "$logs\$Tag.docker.stdout.log"
+		$gameLog = if (Test-Path -LiteralPath "$case\game.log") { Get-Content -Raw -Encoding UTF8 -LiteralPath "$case\game.log" } else { '' }
 		$summary['rhel8'] = $loader -match '(release 8\.|release 8 )'
 		$summary['ffmpeg_loaded'] = $gameLog -match 'LogDTCctv: FFmpeg '
 		$summary['pixel_streaming_mounted'] = $gameLog -match 'Mounting Engine plugin PixelStreaming'
@@ -283,7 +283,7 @@ try
 	{
 		& "$PSScriptRoot\fault_test.ps1" -Tools $Tools -FFmpeg $FFmpeg -Out $run -Executable $winExe -ResizeScenario disconnected -Execute
 		$fault = @(Get-ChildItem -LiteralPath $run -Directory -Filter 'fault-*' | Sort-Object Name)[-1]
-		$results['7_disconnected_8_fault'] = Get-Content -Raw -LiteralPath (Join-Path $fault.FullName 'result.json') | ConvertFrom-Json
+		$results['7_disconnected_8_fault'] = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $fault.FullName 'result.json') | ConvertFrom-Json
 	}
 	catch { $results['7_disconnected_8_fault'] = @{ status = 'FAIL'; note = $_.Exception.Message } }
 	$results['8_close_open'] = Invoke-DTCctvWindowsCase -Tag close-open -Seconds 120 -Extra '-CctvCloseOpenCycles=5 -CctvCloseOpenInterval=10 -CctvCloseHold=2'
