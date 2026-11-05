@@ -48,6 +48,10 @@ def analyze(folder, log, interval=10):
         # 닫기·연결 중 표본이 끝점으로 섞이지 않았는지 가장 가까운 CSV로 확인한다.
         playing = [r for r in samples if float(r["t"]) <= point["t"]][-1]
         point["playing"] = int(playing["playing"])
+        if "plane_texture_rebuilds" in playing:
+            point["plane_texture_rebuilds"] = int(playing["plane_texture_rebuilds"])
+            point["rhi_streaming_mib"] = int(playing["rhi_streaming_bytes"])/1048576
+            point["rhi_nonstreaming_mib"] = int(playing["rhi_nonstreaming_bytes"])/1048576
         endpoints.append(point)
     last = endpoints[-10:]
     summary = dict(status="FAIL", requested_cycles=30, observed_opens=len(opens), endpoints=endpoints,
@@ -65,6 +69,9 @@ def analyze(folder, log, interval=10):
             if metric["status"] == "FAIL":
                 summary["failures"].append(key+" 증가 기준 미달")
     summary["status"] = "FAIL" if summary["failures"] else "PASS"
+    if len(last) == 10 and "plane_texture_rebuilds" in last[0]:
+        summary["allocation_diagnostics"] = {key:dict(first=last[0][key], last=last[-1][key], delta=last[-1][key]-last[0][key]) for key in ("plane_texture_rebuilds", "rhi_streaming_mib", "rhi_nonstreaming_mib")}
+        summary["allocation_diagnostics"]["note"] = "플러그인 평면 텍스처 재생성과 RHI 텍스처 할당량. GPU 프로세스 계정값을 대체하지 않으며 버퍼·드라이버 전체 할당을 입증하지 않음."
     return summary
 
 

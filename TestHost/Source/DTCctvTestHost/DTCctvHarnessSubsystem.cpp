@@ -19,6 +19,8 @@
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "UnrealClient.h"
+#include "DynamicRHI.h"
+#include "RHIStats.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDTCctvHarness, Log, All);
 
@@ -173,9 +175,9 @@ void UDTCctvHarnessSubsystem::BuildViews()
 	if (!CsvPath.IsEmpty())
 	{
 		FFileHelper::SaveStringToFile(
-			TEXT("t,frame_fps,max_frame_ms,used_mb,playing,decode_fps_avg,display_fps_avg,decoded,displayed,superseded,dropped,errors,reconnects,queued,output_w,decoder,codec,src_w,src_h,queued_frames,peak_queued_frames,render_in_flight,frame_age_samples,frame_age_total_ms,frame_age_mean_ms,frame_age_p95_ms,frame_age_max_ms,frame_age_latest_ms,frame_age_hist,queued_frame_bytes,peak_queued_frame_bytes,prepared_w,prepared_h\n"),
+			TEXT("t,frame_fps,max_frame_ms,used_mb,playing,decode_fps_avg,display_fps_avg,decoded,displayed,superseded,dropped,errors,reconnects,queued,output_w,decoder,codec,src_w,src_h,queued_frames,peak_queued_frames,render_in_flight,frame_age_samples,frame_age_total_ms,frame_age_mean_ms,frame_age_p95_ms,frame_age_max_ms,frame_age_latest_ms,frame_age_hist,queued_frame_bytes,peak_queued_frame_bytes,prepared_w,prepared_h,plane_texture_rebuilds,rhi_streaming_bytes,rhi_nonstreaming_bytes\n"),
 			*CsvPath);
-		FFileHelper::SaveStringToFile(TEXT("t,channel,state,decode_fps,display_fps,decoded,displayed,dropped,errors,reconnects,output_w,output_h,src_w,src_h,view_w,view_h,cycle,closed,decoder,codec,queued_frames,peak_queued_frames,render_in_flight,frame_age_samples,frame_age_total_ms,frame_age_mean_ms,frame_age_p95_ms,frame_age_max_ms,frame_age_latest_ms,frame_age_hist,queued_frame_bytes,peak_queued_frame_bytes,prepared_w,prepared_h\n"), *ChannelCsvPath);
+		FFileHelper::SaveStringToFile(TEXT("t,channel,state,decode_fps,display_fps,decoded,displayed,dropped,errors,reconnects,output_w,output_h,src_w,src_h,view_w,view_h,cycle,closed,decoder,codec,queued_frames,peak_queued_frames,render_in_flight,frame_age_samples,frame_age_total_ms,frame_age_mean_ms,frame_age_p95_ms,frame_age_max_ms,frame_age_latest_ms,frame_age_hist,queued_frame_bytes,peak_queued_frame_bytes,prepared_w,prepared_h,plane_texture_rebuilds\n"), *ChannelCsvPath);
 		FFileHelper::SaveStringToFile(TEXT("t,event,cycle\n"), *EventCsvPath);
 	}
 	WriteEvent(TEXT("start"), 0.0);
@@ -313,6 +315,7 @@ void UDTCctvHarnessSubsystem::WriteSample(float DeltaTime)
 	FString ChannelLines;
 	int32 QueuedFrames = 0, PeakFrames = 0, RenderCommands = 0;
 	int64 QueuedFrameBytes = 0, PeakQueuedFrameBytes = 0;
+	int32 PlaneTextureRebuilds = 0;
 	FIntPoint PreparedSize = FIntPoint::ZeroValue;
 	FDTCctvStreamStats FrameAgeTotals;
 	for (int32 Index = 0; Index < Views.Num(); ++Index)
@@ -324,17 +327,18 @@ void UDTCctvHarnessSubsystem::WriteSample(float DeltaTime)
 			continue;
 		}
 		const FDTCctvStreamStats Stats = GetLifetimeStats(Index);
-		ChannelLines += FString::Printf(TEXT("%.3f,%d,%d,%.3f,%.3f,%lld,%lld,%lld,%lld,%d,%d,%d,%d,%d,%.1f,%.1f,%d,%d,%s,%s,%d,%d,%d,%lld,%.3f,%.3f,%.3f,%.3f,%.3f,%s,%lld,%lld,%d,%d\n"),
+		ChannelLines += FString::Printf(TEXT("%.3f,%d,%d,%.3f,%.3f,%lld,%lld,%lld,%lld,%d,%d,%d,%d,%d,%.1f,%.1f,%d,%d,%s,%s,%d,%d,%d,%lld,%.3f,%.3f,%.3f,%.3f,%.3f,%s,%lld,%lld,%d,%d,%d\n"),
 			Now - StartSeconds, Index, static_cast<int32>(Stats.State), Stats.DecodeFps, Stats.DisplayFps,
 			Stats.FramesDecoded, Stats.FramesDisplayed, Stats.PacketsDropped, Stats.DecodeErrors, Stats.Reconnects,
 			Stats.OutputSize.X, Stats.OutputSize.Y, Stats.SourceSize.X, Stats.SourceSize.Y,
 			RequestedSizes[Index].X, RequestedSizes[Index].Y, CompletedCycles, bCycleClosed ? 1 : 0, *Stats.DecoderName, *Stats.CodecName,
 			Stats.QueuedFrames, Stats.PeakQueuedFrames, Stats.RenderCommandsInFlight,
 			Stats.FrameAgeSamples, Stats.FrameAgeTotalMs, Stats.FrameAgeMeanMs, Stats.FrameAgeP95Ms, Stats.FrameAgeMaxMs, Stats.FrameAgeLatestMs,
-			*FrameAgeHistogramString(Stats), Stats.QueuedFrameBytes, Stats.PeakQueuedFrameBytes, Stats.PreparedFrameSize.X, Stats.PreparedFrameSize.Y);
+			*FrameAgeHistogramString(Stats), Stats.QueuedFrameBytes, Stats.PeakQueuedFrameBytes, Stats.PreparedFrameSize.X, Stats.PreparedFrameSize.Y, Stats.PlaneTextureRebuilds);
 		QueuedFrameBytes += Stats.QueuedFrameBytes;
 		PeakQueuedFrameBytes = FMath::Max(PeakQueuedFrameBytes, Stats.PeakQueuedFrameBytes);
 		PreparedSize = Stats.PreparedFrameSize;
+		PlaneTextureRebuilds += Stats.PlaneTextureRebuilds;
 		AddCounters(FrameAgeTotals, Stats);
 		QueuedFrames += Stats.QueuedFrames;
 		PeakFrames = FMath::Max(PeakFrames, Stats.PeakQueuedFrames);
@@ -358,12 +362,17 @@ void UDTCctvHarnessSubsystem::WriteSample(float DeltaTime)
 
 	const int32 ViewCount = FMath::Max(1, Views.Num());
 	const uint64 UsedMb = FPlatformMemory::GetStats().UsedPhysical / (1024 * 1024);
-	const FString Line = FString::Printf(TEXT("%.1f,%.1f,%.1f,%llu,%d,%.1f,%.1f,%lld,%lld,%lld,%lld,%lld,%d,%d,%d,%s,%s,%d,%d,%d,%d,%d,%lld,%.3f,%.3f,%.3f,%.3f,%.3f,%s,%lld,%lld,%d,%d\n"),
+	FTextureMemoryStats TextureMemory;
+	if (FApp::CanEverRender())
+	{
+		RHIGetTextureMemoryStats(TextureMemory);
+	}
+	const FString Line = FString::Printf(TEXT("%.1f,%.1f,%.1f,%llu,%d,%.1f,%.1f,%lld,%lld,%lld,%lld,%lld,%d,%d,%d,%s,%s,%d,%d,%d,%d,%d,%lld,%.3f,%.3f,%.3f,%.3f,%.3f,%s,%lld,%lld,%d,%d,%d,%llu,%llu\n"),
 		Now - StartSeconds, FramesThisWindow / Window, MaxFrameMs, UsedMb, Playing,
 		DecodeFps / ViewCount, DisplayFps / ViewCount, Decoded, Displayed, Superseded, Dropped, Errors, Reconnects, Queued,
 		OutputWidth, *Decoder, *Codec, SourceW, SourceH, QueuedFrames, PeakFrames, RenderCommands,
 		FrameAgeTotals.FrameAgeSamples, FrameAgeTotals.FrameAgeTotalMs, FrameAgeTotals.FrameAgeMeanMs, FrameAgeTotals.FrameAgeP95Ms, FrameAgeTotals.FrameAgeMaxMs, FrameAgeTotals.FrameAgeLatestMs,
-		*FrameAgeHistogramString(FrameAgeTotals), QueuedFrameBytes, PeakQueuedFrameBytes, PreparedSize.X, PreparedSize.Y);
+		*FrameAgeHistogramString(FrameAgeTotals), QueuedFrameBytes, PeakQueuedFrameBytes, PreparedSize.X, PreparedSize.Y, PlaneTextureRebuilds, TextureMemory.StreamingMemorySize, TextureMemory.NonStreamingMemorySize);
 	UE_LOG(LogDTCctvHarness, Log, TEXT("%s"), *Line.TrimEnd());
 	if (!CsvPath.IsEmpty())
 	{

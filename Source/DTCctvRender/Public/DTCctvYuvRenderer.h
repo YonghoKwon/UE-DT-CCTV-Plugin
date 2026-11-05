@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "RHI.h"
+#include <atomic>
 
 class FRHICommandListImmediate;
 
@@ -37,6 +38,7 @@ class DTCCTVRENDER_API FDTCctvYuvRenderer
 {
 public:
 	void Render(FRHICommandListImmediate& RHICmdList, const FDTCctvYuvPlanes& Planes, FRHITexture* Target);
+	int32 GetPlaneTextureRebuilds() const { return PlaneTextureRebuilds.load(); }
 
 private:
 	void EnsurePlaneTextures(const FDTCctvYuvPlanes& Planes);
@@ -46,4 +48,5 @@ private:
 	FTextureRHIRef VTexture;
 	FIntPoint CachedSize = FIntPoint::ZeroValue;
 	bool bCachedSemiPlanar = false;
+	std::atomic<int32> PlaneTextureRebuilds{ 0 };
 };

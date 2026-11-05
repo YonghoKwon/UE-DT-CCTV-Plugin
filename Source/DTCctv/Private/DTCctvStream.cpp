@@ -359,6 +359,7 @@ FDTCctvStreamStats UDTCctvStream::GetStats() const
 	Stats.PeakQueuedFrameBytes = FMath::Max(Stats.PeakQueuedFrameBytes, Accumulated.PeakQueuedFrameBytes);
 	DTCctvMergeFrameAgeStats(Stats, Accumulated);
 	Stats.RenderCommandsInFlight = RenderInFlight.IsValid() ? RenderInFlight->load() : 0;
+	Stats.PlaneTextureRebuilds = Renderer.IsValid() ? Renderer->GetPlaneTextureRebuilds() : 0;
 	Stats.FramesDisplayed = FramesDisplayed;
 	Stats.OutputSize = OutputSize;
 	Stats.DecodeFps = DecodeFps;

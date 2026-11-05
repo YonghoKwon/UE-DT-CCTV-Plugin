@@ -139,6 +139,10 @@ struct FDTCctvStreamStats
 	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
 	FIntPoint PreparedFrameSize = FIntPoint::ZeroValue;
 
+	/** 같은 스트림 객체의 평면 텍스처 재생성 횟수. Close/Open 사이에도 유지한다. */
+	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
+	int32 PlaneTextureRebuilds = 0;
+
 	/** 디코딩 완료부터 렌더 명령 등록까지의 시간. 네트워크 지연과 GPU 완료 시간은 제외한다. */
 	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
 	int64 FrameAgeSamples = 0;

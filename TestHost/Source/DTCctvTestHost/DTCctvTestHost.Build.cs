@@ -6,5 +6,6 @@ public class DTCctvTestHost : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "UMG", "Slate", "SlateCore", "DTCctv" });
+		PrivateDependencyModuleNames.Add("RHI");
 	}
 }

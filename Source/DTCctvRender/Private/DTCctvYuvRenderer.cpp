@@ -111,6 +111,7 @@ void FDTCctvYuvRenderer::EnsurePlaneTextures(const FDTCctvYuvPlanes& Planes)
 	}
 	CachedSize = Planes.Size;
 	bCachedSemiPlanar = Planes.bSemiPlanar;
+	PlaneTextureRebuilds.fetch_add(1);
 }
 
 void FDTCctvYuvRenderer::Render(FRHICommandListImmediate& RHICmdList, const FDTCctvYuvPlanes& Planes, FRHITexture* Target)
