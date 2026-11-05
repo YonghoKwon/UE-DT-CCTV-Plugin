@@ -8,7 +8,7 @@ from collections import Counter
 from pathlib import Path
 
 
-def analyze(raw, game_log, endpoints=None):
+def analyze(raw, game_log, endpoints=None, tail_cycles=10):
     text = game_log.read_text(encoding="utf-8-sig", errors="replace")
     stamp = re.search(r"\[([^\]]+)\].*LogDTCctvHarness: 시나리오: start", text).group(1)
     origin = dt.datetime.strptime(stamp, "%Y.%m.%d-%H.%M.%S:%f").replace(tzinfo=dt.timezone.utc)
@@ -21,7 +21,7 @@ def analyze(raw, game_log, endpoints=None):
             sample = [r for r in samples if r["t"] <= endpoint["t"]][-1]
             selected.append(dict(cycle=endpoint["cycle"], resource_t=endpoint["t"], snapshot_t=sample["t"],
                                  offset_seconds=sample["t"]-endpoint["t"], counts=sample["counts"], threads=sample["threads"]))
-        window = selected[-10:]
+        window = selected[-tail_cycles:]
     else:
         window = [r for r in samples if 600 <= r["t"] <= 3600]
     modules = sorted({m for sample in window for m in sample["counts"]})
@@ -52,8 +52,9 @@ if __name__ == "__main__":
     parser.add_argument("--game-log", type=Path, required=True)
     parser.add_argument("--endpoints", type=Path)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument('--tail-cycles',type=int,default=10)
     args = parser.parse_args()
     endpoints = json.loads(args.endpoints.read_text(encoding="utf-8-sig"))["endpoints"] if args.endpoints else None
-    result = analyze(args.raw, args.game_log, endpoints)
+    result = analyze(args.raw, args.game_log, endpoints, args.tail_cycles)
     args.out.write_text(json.dumps(result, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
     print(json.dumps({k:v for k,v in result.items() if k not in ("stable_tid_sets", "selected_endpoints", "added_modules", "removed_modules", "note")}, ensure_ascii=False, indent=2))

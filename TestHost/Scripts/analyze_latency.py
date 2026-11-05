@@ -68,7 +68,7 @@ def analyze(folder, game_fps, video_fps, recovery=False):
     if summary["dropped"] or summary["reconnects"] or summary["errors"]:
         failures.append("패킷 손실·재연결·오류0 기준 미달")
     limits = {(144, 60): (58, 34, 0), (60, 60): (58, 50, 0.01),
-              (30, 60): (28, 100, None), (60, 30): (29, 50, 0)}
+              (30, 60): (28, 100, None), (60, 30): (29, 50, 0), (144, 30): (29, 50, 0)}
     display_limit, age_limit, replacement_limit = limits[(game_fps, video_fps)]
     if summary["display_fps"] < display_limit:
         failures.append("표시 FPS 기준 미달")
