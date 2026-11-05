@@ -116,7 +116,7 @@ URL은 `DTCctvMaskUrlCredentials`로 계정을 가립니다. 운영 코드에서
 | `-CctvShot=...`, `-CctvShotEvery=0.5` | 최종 PNG와 10초 이후 연속 PNG |
 | `-CctvCsv=...` | 집계 CSV, 같은 이름의 `.channels.csv`와 `.events.csv` |
 
-사용자가 UE 사용을 다시 허용한 뒤에만 `TestHost/Scripts/run_pending_gates.ps1 -Execute`를 실행합니다. 기본 동작은 계획 출력입니다. 실행기는 현재 코드의 Editor 빌드·단위 테스트·양 플랫폼 재패키징을 먼저 수행하고, 4~8번을 순서대로 진행하며 60분 시험을 마지막에 둡니다. 한 번에 한 빌드·게임·측정만 실행합니다. 다른 Unreal 프로세스(TraceServer 포함)나 시험 송출기가 있으면 거부하며, 기존 작업을 종료하지 않습니다.
+사용자가 UE 사용을 다시 허용한 뒤에만 `TestHost/Scripts/run_pending_gates.ps1 -Execute`를 실행합니다. 기본 동작은 계획 출력입니다. 실행기는 현재 코드의 Editor 빌드·단위 테스트·양 플랫폼 재패키징을 먼저 수행하고, 4~8번을 순서대로 진행하며 60분 시험을 마지막에 둡니다. 한 번에 한 빌드·게임·측정만 실행합니다. 상주하는 `UnrealTraceServer`는 바쁜 작업에서 제외합니다. 다른 Editor·빌드·쿡·셰이더 컴파일·시험 프로세스는 계속 거부하며, 기존 작업을 종료하지 않습니다.
 
 `fault_test.ps1`도 기본적으로 실행하지 않으며, 실행 시 직접 시작한 PID의 생성 시각과 실행 경로를 확인한 후에만 종료합니다. 준비한 실행기와 자원 수집·정리 경로 자체의 실행 검증도 남아 있습니다.
 

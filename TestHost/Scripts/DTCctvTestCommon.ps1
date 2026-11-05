@@ -18,7 +18,7 @@ function Assert-DTCctvIdle
 {
 	param([int[]]$OwnedIds = @())
 	$busy = @(Get-CimInstance Win32_Process | Where-Object {
-		$_.ProcessId -notin $OwnedIds -and (
+		$_.ProcessId -notin $OwnedIds -and $_.Name -notmatch '^UnrealTraceServer(\.exe)?$' -and (
 			$_.Name -match '^(Unreal.*|ShaderCompileWorker|DTCctvTestHost|mediamtx|ffmpeg)(\.exe)?$' -or
 			$_.CommandLine -match '(UnrealBuildTool\.(dll|exe)|[\\/]Build\.bat|[\\/]RunUAT\.bat)')
 	})
