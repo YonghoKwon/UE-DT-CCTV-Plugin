@@ -1,0 +1,10 @@
+* text=auto
+*.uasset binary
+*.umap binary
+*.png binary
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+Source/ThirdParty/DTCctvFFmpeg/Win64/bin/*.dll filter=lfs diff=lfs merge=lfs -text
+Source/ThirdParty/DTCctvFFmpeg/Win64/lib/*.lib filter=lfs diff=lfs merge=lfs -text
+Source/ThirdParty/DTCctvFFmpeg/Linux/lib/*.so.* filter=lfs diff=lfs merge=lfs -text

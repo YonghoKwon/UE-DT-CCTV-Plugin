@@ -1,0 +1,52 @@
+// YUV 평면을 sRGB 렌더 타깃으로 변환한다. 출력 타깃이 sRGB이므로 선형 값을 쓴다.
+#include "/Engine/Public/Platform.ush"
+
+Texture2D YTexture;
+Texture2D UTexture;
+Texture2D VTexture;
+SamplerState LinearSampler;
+float4 RowR;
+float4 RowG;
+float4 RowB;
+float2 InvOutputSize;
+float2 TapOffset;
+uint bSemiPlanar;
+
+float GammaToLinear(float C)
+{
+	C = saturate(C);
+	return C <= 0.04045f ? C / 12.92f : pow((C + 0.055f) / 1.055f, 2.4f);
+}
+
+void MainPS(float4 SvPosition : SV_POSITION, out float4 OutColor : SV_Target0)
+{
+	const float2 UV = SvPosition.xy * InvOutputSize;
+
+	// 축소 출력에서 앨리어싱을 줄이기 위해 휘도를 4탭으로 샘플링한다.
+	const float Y = 0.25f * (
+		YTexture.SampleLevel(LinearSampler, UV + float2(-TapOffset.x, -TapOffset.y), 0).r +
+		YTexture.SampleLevel(LinearSampler, UV + float2( TapOffset.x, -TapOffset.y), 0).r +
+		YTexture.SampleLevel(LinearSampler, UV + float2(-TapOffset.x,  TapOffset.y), 0).r +
+		YTexture.SampleLevel(LinearSampler, UV + float2( TapOffset.x,  TapOffset.y), 0).r);
+
+	float Cb;
+	float Cr;
+	if (bSemiPlanar != 0)
+	{
+		const float2 CbCr = UTexture.SampleLevel(LinearSampler, UV, 0).rg;
+		Cb = CbCr.x;
+		Cr = CbCr.y;
+	}
+	else
+	{
+		Cb = UTexture.SampleLevel(LinearSampler, UV, 0).r;
+		Cr = VTexture.SampleLevel(LinearSampler, UV, 0).r;
+	}
+
+	const float4 YCbCr1 = float4(Y, Cb, Cr, 1.0f);
+	OutColor = float4(
+		GammaToLinear(dot(RowR, YCbCr1)),
+		GammaToLinear(dot(RowG, YCbCr1)),
+		GammaToLinear(dot(RowB, YCbCr1)),
+		1.0f);
+}

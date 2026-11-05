@@ -1,0 +1,11 @@
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+.vs/
+*.sln
+*.suo
+*.pdb
+TestHost/Plugins/
+TestHost/Build/
+TestHost/.tools/

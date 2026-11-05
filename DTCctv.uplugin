@@ -1,0 +1,14 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0",
+	"FriendlyName": "DT CCTV",
+	"Description": "Low-latency multi-channel RTSP CCTV playback for DT projects (FFmpeg decode, GPU YUV conversion, UMG view).",
+	"Category": "Digital Twin",
+	"CanContainContent": false,
+	"Installed": false,
+	"Modules": [
+		{ "Name": "DTCctvRender", "Type": "Runtime", "LoadingPhase": "PostConfigInit", "PlatformAllowList": [ "Win64", "Linux" ] },
+		{ "Name": "DTCctv", "Type": "Runtime", "LoadingPhase": "Default", "PlatformAllowList": [ "Win64", "Linux" ] }
+	]
+}

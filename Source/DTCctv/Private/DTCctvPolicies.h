@@ -1,0 +1,29 @@
+#pragma once
+
+#include "CoreMinimal.h"
+
+/** 로그에 남기기 전에 URL의 계정 정보를 가린다. */
+FString DTCctvMaskUrlCredentials(const FString& Text);
+
+/** 표시 크기에 맞는 렌더 타깃 크기. 비율을 유지하고 원본보다 커지지 않는다. */
+FIntPoint DTCctvComputeOutputSize(FIntPoint SourceSize, FVector2D ViewSize);
+
+/** 재연결 대기 시간 계산. 안정적으로 재생되면 처음 값으로 돌아간다. */
+class FDTCctvBackoff
+{
+public:
+	FDTCctvBackoff(float InMinSeconds, float InMaxSeconds);
+
+	/**
+	 * @param StableSeconds 직전 연결에서 첫 프레임 이후 유지된 시간
+	 * @param Random01 [0, 1) 난수. 채널이 동시에 재시도하지 않도록 최대 25%를 더한다.
+	 */
+	float Next(double StableSeconds, float Random01);
+
+	static constexpr double StableResetSeconds = 30.0;
+
+private:
+	float MinSeconds;
+	float MaxSeconds;
+	float CurrentSeconds;
+};
