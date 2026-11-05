@@ -154,23 +154,26 @@ function Invoke-DTCctvWindowsCase
 
 function Invoke-DTCctvLinuxCase
 {
-	param([string]$Tag, [int]$Count = 1, [switch]$Gpu, [switch]$AddHost)
+	param([string]$Tag, [int]$Count = 1, [switch]$Gpu, [switch]$AddHost, [switch]$NullRhiAuto, [string]$Extra = '', [string[]]$DockerOptions = @())
 	Assert-DTCctvIdle
 	$case = Join-Path $run $Tag
 	New-Item -ItemType Directory -Path $case | Out-Null
 	$owned = [System.Collections.Generic.List[object]]::new()
 	$containerId = $null
-	$summary = [ordered]@{ status = 'FAIL'; note = ''; path = $case; rendering = [bool]$Gpu }
+	$summary = [ordered]@{ status = 'FAIL'; note = ''; path = $case; rendering = [bool]($Gpu -and -not $NullRhiAuto) }
 	try
 	{
 		$null = Start-DTCctvSource -Tools $Tools -FFmpeg $FFmpeg -Out $logs -Tag $Tag -Owned $owned
 		& docker image inspect $LinuxImage --format '{{.Id}}' *> "$logs\$Tag.image.log"
 		if ($LASTEXITCODE -ne 0) { throw '지정한 로컬 이미지가 없습니다. 다운로드하지 않습니다.' }
 		$rhi = if ($Gpu) { '-RenderOffscreen -vulkan' } else { '-nullrhi -CctvSoftware' }
+		if ($NullRhiAuto) { $rhi = '-nullrhi' }
 		$command = 'cat /etc/redhat-release && getconf GNU_LIBC_VERSION && exec /package/DTCctvTestHost/Binaries/Linux/DTCctvTestHost ' + $rhi + ' -unattended -nosound -nosplash -userdir=/tmp/ue -CctvUrl=rtsp://host.docker.internal:8554/cam -CctvCount=' + $Count + ' -CctvSeconds=65 -CctvCsv=/reports/samples.csv -abslog=/reports/game.log'
+		$command += ' ' + $Extra
 		$dockerArgs = @('create', '--pull=never', '--read-only', '--tmpfs', '/tmp:rw,exec,mode=1777', '--mount', "type=bind,source=$Packages\Linux,target=/package,readonly", '--mount', "type=bind,source=$case,target=/reports", '--entrypoint', '/bin/bash')
 		if ($Gpu) { $dockerArgs += @('--gpus', 'all') }
 		if ($AddHost) { $dockerArgs += @('--add-host', 'host.docker.internal:host-gateway') }
+		$dockerArgs += $DockerOptions
 		$created = & docker @dockerArgs $LinuxImage -lc $command 2> "$logs\$Tag.create.log"
 		if ($LASTEXITCODE -ne 0 -or $created -notmatch '^[0-9a-f]{64}$') { throw '시험 컨테이너 생성 실패.' }
 		$containerId = [string]$created
@@ -195,7 +198,11 @@ function Invoke-DTCctvLinuxCase
 		$rows = @(if (Test-Path -LiteralPath "$case\samples.csv") { Import-Csv -LiteralPath "$case\samples.csv" })
 		$summary['decoded'] = if ($rows.Count) { [long]$rows[-1].decoded } else { 0 }
 		$summary['all_playing'] = $rows.Count -gt 0 -and [int]$rows[-1].playing -eq $Count
-		$summary['nvdec'] = @($rows | Where-Object { $_.decoder -eq 'cuda' }).Count -gt 0
+		$channelRows = @(Get-DTCctvChannelSample -Csv "$case\samples.channels.csv" -Count $Count)
+		$summary['channels'] = $channelRows
+		$summary['cuda_channels'] = @($channelRows | Where-Object { $_.decoder -eq 'cuda' }).Count
+		$summary['software_channels'] = @($channelRows | Where-Object { $_.decoder -eq 'software' }).Count
+		$summary['nvdec'] = $summary.cuda_channels -gt 0
 		$summary['vulkan'] = $Gpu -and $gameLog -match 'LogVulkanRHI:'
 		if ($client.Process.ExitCode -eq 0 -and $summary.rhel8 -and $summary.ffmpeg_loaded -and $summary.decoded -gt 0 -and $summary.all_playing) { $summary.status = 'PASS' }
 		else { $summary.note = '배포판·로더·프레임·전 채널 재생 또는 종료 코드를 충족하지 못했습니다.' }
