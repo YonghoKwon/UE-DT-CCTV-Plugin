@@ -140,7 +140,7 @@ function Invoke-DTCctvWindowsCase
 		catch { $summary.status = 'FAIL'; $summary.note = $_.Exception.Message }
 		Write-DTCctvJson -Path "$case\result.json" -Value $summary
 	}
-	return $summary
+	return ,$summary
 }
 
 function Invoke-DTCctvLinuxCase
@@ -195,7 +195,7 @@ function Invoke-DTCctvLinuxCase
 		catch { $summary.status = 'FAIL'; $summary.note += $_.Exception.Message }
 		Write-DTCctvJson -Path "$case\result.json" -Value $summary
 	}
-	return $summary
+	return ,$summary
 }
 
 $testLock = Enter-DTCctvTestLock
@@ -222,6 +222,12 @@ try
 	$ps = $results['6_ps_windows']
 	$ps.status = if ($ps.status -eq 'MEASURED' -and $ps.all_playing -and $ps.pixel_streaming_mounted) { 'PASS' } else { 'FAIL' }
 	$results['6_ps_linux'] = Invoke-DTCctvLinuxCase -Tag ps-linux -Count 16 -Gpu:$linuxRendering -AddHost
+	$psLinux = $results['6_ps_linux']
+	if ($psLinux.status -eq 'PASS' -and -not $psLinux.pixel_streaming_mounted)
+	{
+		$psLinux.status = 'FAIL'
+		$psLinux.note = 'Linux Pixel Streaming 마운트를 확인하지 못했습니다.'
+	}
 	foreach ($psKey in @('6_ps_windows', '6_ps_linux'))
 	{
 		$psCase = $results[$psKey]
