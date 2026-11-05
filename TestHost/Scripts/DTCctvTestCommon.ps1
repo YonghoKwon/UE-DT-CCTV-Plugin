@@ -1,5 +1,18 @@
-# 이 파일은 함수만 정의한다. 시험 실행은 별도 스크립트의 -Execute가 필요하다.
+﻿# 이 파일은 함수만 정의한다. 시험 실행은 별도 스크립트의 -Execute가 필요하다.
 Set-StrictMode -Version Latest
+
+function Enter-DTCctvTestLock
+{
+	$mutex = [System.Threading.Mutex]::new($false, 'Local\DTCctvCCTV01')
+	try { $acquired = $mutex.WaitOne(0) }
+	catch [System.Threading.AbandonedMutexException] { $acquired = $true }
+	if (-not $acquired)
+	{
+		$mutex.Dispose()
+		throw '다른 CCTV 측정 스크립트가 실행 중입니다.'
+	}
+	return $mutex
+}
 
 function Assert-DTCctvIdle
 {
@@ -63,6 +76,47 @@ function Write-DTCctvJson
 	param([string]$Path, $Value)
 	$json = $Value | ConvertTo-Json -Depth 12
 	[System.IO.File]::WriteAllText($Path, $json, [System.Text.UTF8Encoding]::new($false))
+}
+
+function Get-DTCctvChannelSample
+{
+	param([string]$Csv, [int]$Count)
+	if (-not (Test-Path -LiteralPath $Csv)) { return }
+	$groups = @(Import-Csv -LiteralPath $Csv | Group-Object t)
+	for ($index = $groups.Count - 1; $index -ge 0; --$index)
+	{
+		$rows = @($groups[$index].Group)
+		if ($rows.Count -eq $Count -and @($rows.channel | Sort-Object -Unique).Count -eq $Count)
+		{
+			return $rows
+		}
+	}
+}
+
+function Save-DTCctvResources
+{
+	param($Entry, [string]$Csv)
+	if ($Entry.Process.HasExited) { return }
+	$process = Get-Process -Id $Entry.Id -ErrorAction Stop
+	$dedicated = $null
+	$shared = $null
+	try
+	{
+		$gpu = @(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUProcessMemory -ErrorAction Stop |
+			Where-Object { $_.Name -like "pid_$($Entry.Id)_*" })
+		if ($gpu.Count -gt 0)
+		{
+			$dedicated = ($gpu | Measure-Object DedicatedUsage -Sum).Sum
+			$shared = ($gpu | Measure-Object SharedUsage -Sum).Sum
+		}
+	}
+	catch { } # WDDM 계측을 제공하지 않는 환경은 빈 값으로 기록한다.
+	[pscustomobject]@{
+		utc = [datetime]::UtcNow.ToString('o'); pid = $Entry.Id
+		private_bytes = $process.PrivateMemorySize64; working_set_bytes = $process.WorkingSet64
+		handles = $process.HandleCount; threads = $process.Threads.Count
+		gpu_dedicated_bytes = $dedicated; gpu_shared_bytes = $shared
+	} | Export-Csv -LiteralPath $Csv -NoTypeInformation -Append -Encoding UTF8
 }
 
 function Start-DTCctvSource

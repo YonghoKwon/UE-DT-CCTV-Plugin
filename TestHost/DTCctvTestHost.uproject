@@ -8,6 +8,7 @@
 	],
 	"Plugins": [
 		{ "Name": "DTCctv", "Enabled": true },
+		{ "Name": "PixelStreaming", "Enabled": true },
 		{ "Name": "AndroidFileServer", "Enabled": false }
 	]
 }
