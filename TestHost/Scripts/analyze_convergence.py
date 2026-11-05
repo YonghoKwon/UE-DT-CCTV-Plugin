@@ -46,7 +46,7 @@ def analyze(folder, log, interval=10):
         point = near[-1].copy()
         point.update(cycle=int(event["cycle"]), segment_start=start, segment_end=end, sample_before_end_seconds=end-point["t"])
         # 닫기·연결 중 표본이 끝점으로 섞이지 않았는지 가장 가까운 CSV로 확인한다.
-        playing = min(samples, key=lambda r: abs(float(r["t"])-point["t"]))
+        playing = [r for r in samples if float(r["t"]) <= point["t"]][-1]
         point["playing"] = int(playing["playing"])
         endpoints.append(point)
     last = endpoints[-10:]
