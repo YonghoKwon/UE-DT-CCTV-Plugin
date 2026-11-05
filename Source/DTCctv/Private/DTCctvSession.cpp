@@ -711,6 +711,7 @@ void FDTCctvSession::DecoderMain()
 
 void FDTCctvSession::OutputFrame(AVFrame* Decoded)
 {
+	const double DecodedSeconds = NowSeconds();
 	AVFrame* Output = nullptr;
 	if (Decoded->hw_frames_ctx != nullptr)
 	{
@@ -775,7 +776,7 @@ void FDTCctvSession::OutputFrame(AVFrame* Decoded)
 		Output = Converted;
 	}
 
-	const FDTCctvVideoFramePtr Frame = MakeShared<FDTCctvVideoFrame, ESPMode::ThreadSafe>(Output, FrameSourceSize);
+	const FDTCctvVideoFramePtr Frame = MakeShared<FDTCctvVideoFrame, ESPMode::ThreadSafe>(Output, FrameSourceSize, DecodedSeconds);
 	{
 		FScopeLock ScopeLock(&Lock);
 		SourceSize = FrameSourceSize;

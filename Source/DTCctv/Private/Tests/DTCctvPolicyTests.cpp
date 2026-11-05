@@ -140,7 +140,8 @@ bool FDTCctvFrameMetadataTest::RunTest(const FString& Parameters)
 	Frame->width = 480;
 	Frame->height = 270;
 	Frame->colorspace = AVCOL_SPC_UNSPECIFIED;
-	const FDTCctvVideoFrame VideoFrame(Frame, FIntPoint(1920, 1080));
+	const FDTCctvVideoFrame VideoFrame(Frame, FIntPoint(1920, 1080), 123.0);
+	TestEqual(TEXT("CPU 변환 전 디코딩 완료 시각 보존"), VideoFrame.GetDecodedSeconds(), 123.0);
 	TestTrue(TEXT("축소 프레임도 원본 크기 보존"), VideoFrame.GetSourceSize() == FIntPoint(1920, 1080));
 	const FDTCctvColorTransform Expected = DTCctvMakeColorTransform(EDTCctvYuvMatrix::Bt709, false);
 	TestTrue(TEXT("색 공간 미지정 HD 원본은 축소 후에도 BT.709"), VideoFrame.GetPlanes().Transform.RowR.Equals(Expected.RowR, 0.0001f));

@@ -10,7 +10,7 @@ class FDTCctvVideoFrame
 {
 public:
 	/** Frame의 소유권을 가져온다. */
-	FDTCctvVideoFrame(AVFrame* InFrame, FIntPoint InSourceSize);
+	FDTCctvVideoFrame(AVFrame* InFrame, FIntPoint InSourceSize, double InDecodedSeconds = 0.0);
 	~FDTCctvVideoFrame();
 
 	FDTCctvVideoFrame(const FDTCctvVideoFrame&) = delete;
