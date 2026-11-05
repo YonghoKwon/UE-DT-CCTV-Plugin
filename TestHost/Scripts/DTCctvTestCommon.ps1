@@ -61,7 +61,7 @@ function Start-DTCctvOwnedProcess
 		FilePath = $resolved; ArgumentList = $Arguments; WorkingDirectory = $WorkingDirectory
 		RedirectStandardOutput = "$LogPrefix.stdout.log"; RedirectStandardError = "$LogPrefix.stderr.log"; PassThru = $true
 	}
-	if ([IO.Path]::GetFileNameWithoutExtension($resolved) -in @('mediamtx', 'ffmpeg'))
+	if ([IO.Path]::GetFileNameWithoutExtension($resolved) -in @('mediamtx', 'ffmpeg', 'python', 'python3', 'pythonw'))
 	{
 		$launch['WindowStyle'] = 'Hidden'
 	}

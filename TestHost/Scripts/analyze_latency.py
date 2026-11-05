@@ -86,13 +86,15 @@ def analyze(folder, game_fps, video_fps, recovery=False):
             if float(row["t"]) >= end:
                 by_time.setdefault(float(row["t"]), []).append(row)
         recovered = None
-        for stamp, group in sorted(by_time.items()):
-            if len(group) == 16 and all(float(r["frame_age_latest_ms"]) <= age_limit for r in group):
+        ordered = sorted(by_time.items())
+        baseline = {int(r["channel"]):int(r["frame_age_samples"]) for r in ordered[0][1]}
+        for stamp, group in ordered[1:]:
+            if len(group) == 16 and all(int(r["frame_age_samples"]) > baseline[int(r["channel"])] and float(r["frame_age_latest_ms"]) <= age_limit for r in group):
                 recovered = stamp-end
                 break
         summary["recovery"] = dict(stall_end_t=end, observed_upper_seconds=recovered,
                                    threshold_ms=age_limit, sample_interval_seconds=1,
-                                   method="정지 종료 이벤트 이후 전16채널의 마지막 제출 frame age가 기준 이하인 첫 CSV 시각. 약1초 관측 상한.")
+                                   method="정지 직후 첫 CSV를 기준으로 전16채널 제출 표본 수가 증가하고 마지막 제출 age가 기준 이하인 첫 후속CSV 시각. 정지 전 값의 재사용을 막는 보수적 관측 상한.")
         if recovered is None or recovered > 2:
             failures.append("정지 후2초 이내 지연 회복 기준 미달")
         # 강제 정지 자체의 프레임 대체는 별도 수치로 보존한다.

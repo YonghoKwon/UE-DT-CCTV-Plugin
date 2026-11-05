@@ -72,7 +72,7 @@ function Invoke-DTCctvBuild
 
 function Invoke-DTCctvWindowsCase
 {
-	param([string]$Tag, [int]$Fps = 60, [int]$Seconds = 80, [string]$Extra = '', [switch]$SubStream, [switch]$ValidateRendering, [switch]$Windowed, [int]$GameFps = 144)
+	param([string]$Tag, [int]$Fps = 60, [int]$Seconds = 80, [string]$Extra = '', [switch]$SubStream, [switch]$ValidateRendering, [switch]$Windowed, [int]$GameFps = 144, [double]$ResourceIntervalSeconds = 5.0, [double]$ThreadModuleIntervalSeconds = 0.0)
 	Assert-DTCctvIdle
 	$case = Join-Path $run $Tag
 	New-Item -ItemType Directory -Path $case | Out-Null
@@ -92,8 +92,14 @@ function Invoke-DTCctvWindowsCase
 		$summary['window_mode'] = if ($Windowed) { 'windowed' } else { 'offscreen' }
 		if ($Windowed) { $argsLine = $argsLine.Replace('-RenderOffScreen ', '') }
 		$game = Start-DTCctvOwnedProcess -File $winExe -Arguments $argsLine -WorkingDirectory (Split-Path $winExe) -LogPrefix "$logs\$Tag.game" -Owned $owned
+		if ($ThreadModuleIntervalSeconds -gt 0)
+		{
+			$python = (Get-Command python -ErrorAction Stop).Source
+			$observerArgs = '"' + $repo + '\TestHost\Scripts\collect_thread_modules.py" "' + $logs + '\' + $Tag + '.game.process.json" "' + $logs + '\' + $Tag + '.thread-modules.jsonl" --interval ' + $ThreadModuleIntervalSeconds
+			$null = Start-DTCctvOwnedProcess -File $python -Arguments $observerArgs -WorkingDirectory $repo -LogPrefix "$logs\$Tag.observer" -Owned $owned
+		}
 		$deadline = [datetime]::UtcNow.AddSeconds($Seconds + 90)
-		while (-not $game.Process.WaitForExit(5000))
+		while (-not $game.Process.WaitForExit([math]::Max(100, [int]($ResourceIntervalSeconds * 1000))))
 		{
 			Assert-DTCctvMeasurementIdle -Owned $owned
 			Save-DTCctvResources -Entry $game -Csv "$case\resources.csv"
