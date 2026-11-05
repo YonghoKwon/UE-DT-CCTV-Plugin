@@ -181,6 +181,12 @@ Close/Open30회 마지막10회의 Private 기울기는0.782MiB/회, GPU 첫끝 �
 
 기본 실행기 결과는 `Saved/Reports/CCTV-01/pending-<시각>/`, 큰 로그는 `Saved/Logs/CCTV-01/`에 둡니다. CCTV-01D 결과·로그는 각각 `Saved/Reports/CCTV-01D/`, `Saved/Logs/CCTV-01D/`에 있습니다. 패키지는 저장소 밖 기존 임시 폴더를 사용합니다. Windows 16채널 1080p60 기준은 60초 이상, 평균 디코딩·표시 각각 58fps 이상, 패킷 손실·재연결 0으로 유지합니다. nullrhi는 디코딩 범위만 판정하고 렌더링과 구분합니다. CCTV-01D의 최종 게이트 판정에는 검수 대기 항목이 없습니다.
 
+## CCTV-01F의 Close/Open 판정
+
+2026-11-06 사용자 결정에 따라 Close/Open은 처음 10회를 제외한 재생 구간 끝 표본의 모듈별 스레드 수로 판정합니다. 실행 파일·ucrtbase·NVIDIA 모듈의 수는 모든 회차에서 같아야 하며, 변동은 OS 모듈에서만 허용합니다. 핸들과 총 스레드는 마지막 30회의 최대가 11~40회의 최대를 넘지 않아야 합니다. 이전 원시 증감과 판정도 함께 남깁니다. 소크의 TID 집합 기준과 Close/Open의 모듈별 개수 기준은 각각 적용합니다.
+
+100회 Private는 마지막 30회 기울기 0.3MiB/회 이하 또는 마지막 세 10회 구간의 평균 비증가, GPU·RHI 텍스처 할당은 비증가 기준입니다. 이전 E의 30회 재판정은 제외 후 20회이고 비교 구간이 겹치므로 100회 수렴 증거를 대체하지 않습니다. F의 최종 결과는 `Saved/Reports/CCTV-01F/RESULT.md`와 `result.json`에 기록합니다.
+
 ## 한계
 
 - Linux NVDEC 디코딩은 nullrhi CUDA4/SW12로 검증했습니다. Vulkan YUV 렌더링은 드라이버 초기화 실패로 ENV_BLOCKED입니다. PS 로드 공존은 CCTV-01C 소프트웨어 실행 범위의 증거입니다.
