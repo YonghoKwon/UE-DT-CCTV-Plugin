@@ -72,7 +72,7 @@ function Invoke-DTCctvBuild
 
 function Invoke-DTCctvWindowsCase
 {
-	param([string]$Tag, [int]$Fps = 60, [int]$Seconds = 80, [string]$Extra = '', [switch]$SubStream, [switch]$ValidateRendering)
+	param([string]$Tag, [int]$Fps = 60, [int]$Seconds = 80, [string]$Extra = '', [switch]$SubStream, [switch]$ValidateRendering, [switch]$Windowed)
 	Assert-DTCctvIdle
 	$case = Join-Path $run $Tag
 	New-Item -ItemType Directory -Path $case | Out-Null
@@ -87,13 +87,17 @@ function Invoke-DTCctvWindowsCase
 			$Extra += ' -CctvSubUrl=rtsp://127.0.0.1:8554/sub'
 		}
 		$argsLine = '-RenderOffScreen -windowed -ResX=1920 -ResY=1080 -unattended -nosplash -nosound -CctvUrl=rtsp://127.0.0.1:8554/cam -CctvCount=16 -CctvSeconds=' + $Seconds + ' -CctvCsv="' + $case + '\samples.csv" -CctvShot="' + $case + '\final.png" -ExecCmds="r.VSync 0,t.MaxFPS 144" -abslog="' + $logs + '\' + $Tag + '.game.log" ' + $Extra
+		$summary['window_mode'] = if ($Windowed) { 'windowed' } else { 'offscreen' }
+		if ($Windowed) { $argsLine = $argsLine.Replace('-RenderOffScreen ', '') }
 		$game = Start-DTCctvOwnedProcess -File $winExe -Arguments $argsLine -WorkingDirectory (Split-Path $winExe) -LogPrefix "$logs\$Tag.game" -Owned $owned
 		$deadline = [datetime]::UtcNow.AddSeconds($Seconds + 90)
 		while (-not $game.Process.WaitForExit(5000))
 		{
+			Assert-DTCctvMeasurementIdle -Owned $owned
 			Save-DTCctvResources -Entry $game -Csv "$case\resources.csv"
 			if ([datetime]::UtcNow -ge $deadline) { throw '하네스가 제한 시간 후 종료되지 않았습니다.' }
 		}
+		Assert-DTCctvMeasurementIdle -Owned $owned -Force
 		$summary['exit_code'] = $game.Process.ExitCode
 		if ($game.Process.ExitCode -ne 0) { throw '패키지 실행 실패.' }
 		if ($ValidateRendering)
@@ -129,6 +133,7 @@ function Invoke-DTCctvWindowsCase
 	catch
 	{
 		$summary.note = $_.Exception.Message
+		if ($_.Exception -is [System.OperationCanceledException]) { $summary.status = 'INVALID' }
 		if ($ValidateRendering -and $summary.Contains('render_validation') -and -not $summary.render_validation.valid)
 		{
 			$summary.status = 'INVALID'
@@ -167,7 +172,13 @@ function Invoke-DTCctvLinuxCase
 		$containerId = [string]$created
 		$dockerExe = (Get-Command docker -ErrorAction Stop).Source
 		$client = Start-DTCctvOwnedProcess -File $dockerExe -Arguments "start -a $containerId" -WorkingDirectory $repo -LogPrefix "$logs\$Tag.docker" -Owned $owned
-		if (-not $client.Process.WaitForExit(120000)) { throw 'Linux 시험 제한 시간 초과.' }
+		$deadline = [datetime]::UtcNow.AddSeconds(120)
+		while (-not $client.Process.WaitForExit(5000))
+		{
+			Assert-DTCctvMeasurementIdle -Owned $owned
+			if ([datetime]::UtcNow -ge $deadline) { throw 'Linux 시험 제한 시간 초과.' }
+		}
+		Assert-DTCctvMeasurementIdle -Owned $owned -Force
 		$summary['exit_code'] = $client.Process.ExitCode
 		$loader = Get-Content -Raw -LiteralPath "$logs\$Tag.docker.stdout.log"
 		$gameLog = if (Test-Path -LiteralPath "$case\game.log") { Get-Content -Raw -LiteralPath "$case\game.log" } else { '' }
@@ -182,7 +193,11 @@ function Invoke-DTCctvLinuxCase
 		if ($client.Process.ExitCode -eq 0 -and $summary.rhel8 -and $summary.ffmpeg_loaded -and $summary.decoded -gt 0 -and $summary.all_playing) { $summary.status = 'PASS' }
 		else { $summary.note = '배포판·로더·프레임·전 채널 재생 또는 종료 코드를 충족하지 못했습니다.' }
 	}
-	catch { $summary.note = $_.Exception.Message }
+	catch
+	{
+		$summary.note = $_.Exception.Message
+		if ($_.Exception -is [System.OperationCanceledException]) { $summary.status = 'INVALID' }
+	}
 	finally
 	{
 		if ($containerId)

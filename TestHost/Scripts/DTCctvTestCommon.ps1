@@ -1,5 +1,28 @@
 ﻿# 이 파일은 함수만 정의한다. 시험 실행은 별도 스크립트의 -Execute가 필요하다.
 Set-StrictMode -Version Latest
+$script:DTCctvLastIdleCheck = [datetime]::MinValue
+
+function Assert-DTCctvMeasurementIdle
+{
+	param([System.Collections.Generic.List[object]]$Owned, [switch]$Force)
+	$now = [datetime]::UtcNow
+	if (-not $Force -and ($now - $script:DTCctvLastIdleCheck).TotalSeconds -lt 5) { return }
+	$script:DTCctvLastIdleCheck = $now
+	$ids = @($Owned | Where-Object { -not $_.Process.HasExited } | ForEach-Object { $_.Id })
+	try { Assert-DTCctvIdle -OwnedIds $ids }
+	catch { throw [System.OperationCanceledException]::new('다른 작업이 겹쳐 측정 무효: ' + $_.Exception.Message) }
+}
+
+function Wait-DTCctvMeasurementDelay
+{
+	param([double]$Seconds, [System.Collections.Generic.List[object]]$Owned)
+	$until = [datetime]::UtcNow.AddSeconds($Seconds)
+	while ([datetime]::UtcNow -lt $until)
+	{
+		Assert-DTCctvMeasurementIdle -Owned $Owned
+		Start-Sleep -Milliseconds 500
+	}
+}
 
 function Enter-DTCctvTestLock
 {

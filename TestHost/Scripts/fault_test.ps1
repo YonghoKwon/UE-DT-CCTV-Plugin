@@ -8,6 +8,7 @@ param(
 	[ValidateRange(1, 64)][int]$Count = 16,
 	[ValidateRange(1, 60)][int]$OutageSeconds = 20,
 	[ValidateSet('', 'disconnected')][string]$ResizeScenario = '',
+	[switch]$Windowed,
 	[switch]$Execute
 )
 
@@ -36,6 +37,7 @@ try
 	$prefix = if ([IO.Path]::GetFileName($Executable) -like 'UnrealEditor*') { '"' + $project + '" -game ' } else { '' }
 	$duration = 90 + $OutageSeconds
 	$arguments = $prefix + '-RenderOffScreen -windowed -ResX=1920 -ResY=1080 -unattended -nosplash -nosound -CctvUrl=rtsp://127.0.0.1:8554/cam -CctvCount=' + $Count + ' -CctvSeconds=' + $duration + ' -CctvCsv="' + $csv + '" -ExecCmds="r.VSync 0,t.MaxFPS 144" -abslog="' + $run + '\game.log"'
+	if ($Windowed) { $arguments = $arguments.Replace('-RenderOffScreen ', '') }
 	if ($ResizeScenario)
 	{
 		$arguments += ' -CctvResizeScenario=disconnected -CctvResizeAffected=4 -CctvShotEvery=0.5 -CctvShot="' + $run + '\disconnected.png"'
@@ -44,6 +46,7 @@ try
 	$deadline = [datetime]::UtcNow.AddSeconds(45)
 	do
 	{
+		Assert-DTCctvMeasurementIdle -Owned $owned
 		if ($game.Process.HasExited) { throw '첫 재생 전에 게임이 종료됐습니다.' }
 		$rows = @(if (Test-Path -LiteralPath $csv) { Import-Csv -LiteralPath $csv })
 		$playing = $rows.Count -gt 0 -and [int]$rows[-1].playing -eq $Count -and [double]$rows[-1].t -ge 15
@@ -56,7 +59,7 @@ try
 	$stoppedAt = [datetime]::UtcNow
 	Stop-DTCctvOwnedProcess $source.Server
 	Stop-DTCctvOwnedProcess $source.Publisher
-	Start-Sleep -Seconds $OutageSeconds
+	Wait-DTCctvMeasurementDelay -Seconds $OutageSeconds -Owned $owned
 	$source = Start-DTCctvSource -Tools $Tools -FFmpeg $FFmpeg -Out $run -Tag 'after' -Owned $owned
 	$restoredAt = $source.ReadyAt
 	$baseline = @(Import-Csv -LiteralPath $csv)[-1]
@@ -65,6 +68,7 @@ try
 	$deadline = [datetime]::UtcNow.AddSeconds(30)
 	do
 	{
+		Assert-DTCctvMeasurementIdle -Owned $owned
 		if ($game.Process.HasExited) { throw '복구 전에 게임이 종료됐습니다.' }
 		$rows = @(Import-Csv -LiteralPath $csv)
 		$sample = $rows[-1]
@@ -84,7 +88,13 @@ try
 	} while ([datetime]::UtcNow -lt $deadline)
 	if (-not $recovered) { throw '복구 후 30초 안에 전 채널 재생을 확인하지 못했습니다.' }
 	Save-DTCctvResources -Entry $game -Csv "$run\resources.csv"
-	if (-not $game.Process.WaitForExit(($duration + 30) * 1000)) { throw '게임이 지정 시험 시간 후 종료되지 않았습니다.' }
+	$deadline = [datetime]::UtcNow.AddSeconds($duration + 30)
+	while (-not $game.Process.WaitForExit(1000))
+	{
+		Assert-DTCctvMeasurementIdle -Owned $owned
+		if ([datetime]::UtcNow -ge $deadline) { throw '게임이 지정 시험 시간 후 종료되지 않았습니다.' }
+	}
+	Assert-DTCctvMeasurementIdle -Owned $owned -Force
 	$result.status = if ($game.Process.ExitCode -eq 0) { 'PASS' } else { 'FAIL' }
 	$result.note = '전 채널 재생과 디코딩 재개를 확인했습니다. 복구 시간은 송출 준비 로그 이후 CSV 관측값이며 표본 간격 오차가 있습니다.'
 	$result['exit_code'] = $game.Process.ExitCode
@@ -97,6 +107,7 @@ try
 catch
 {
 	$result.note = $_.Exception.Message
+	if ($_.Exception -is [System.OperationCanceledException]) { $result.status = 'INVALID' }
 	throw
 }
 finally
