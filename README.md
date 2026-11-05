@@ -22,6 +22,22 @@ Windows는 FFmpeg DLL 5개, Linux는 SONAME 파일 5개를 실행 바이너리 �
 
 **기존 FFMPEGMedia 플러그인과 함께 사용하지 말 것.** 이 조합은 시험 대상에서 제외했습니다. Pixel Streaming을 활성화한 Windows·Linux 빌드의 마운트와 16채널 재생을 확인했습니다. 판정 범위는 **"플러그인 로드 공존만 확인, 실제 스트리밍 동시 부하는 미검증"**입니다. Linux는 nullrhi 소프트웨어 디코딩 범위입니다.
 
+## Linux 드라이버와 서버 점검
+
+NVDEC에는 `libcuda.so.1`뿐 아니라 `libnvcuvid.so.1`이 필요합니다. 컨테이너의 기본 compute/utility capability만으로 video 라이브러리가 노출되지 않을 수 있습니다. 이 PC에서는 `--gpus all -e NVIDIA_DRIVER_CAPABILITIES=all`로 CUDA4/SW12 디코딩을 확인했습니다. `libnvidia-encode.so.1`은 실제 NVENC 인코딩을 사용할 때도 확인해야 합니다.
+
+Vulkan 렌더링에는 사용할 GPU와 호환되는 ICD와 그 종속 라이브러리, UE 기능 수준을 만족하는 드라이버가 필요합니다. `LD_LIBRARY_PATH`, `VK_ICD_FILENAMES`/`VK_DRIVER_FILES`, `/usr/share/vulkan/icd.d`, `ldd`와 `vulkaninfo --summary`를 확인하십시오. WSL2의 CUDA/video 노출이 Vulkan 지원을 보증하지 않습니다. 현재 로컬 이미지의 기본 dzn, lavapipe 명시·SM5·CPU 장치 허용과 엔진 제공 `-SkipVulkanProfileCheck` 시험에서도 호환 ICD 초기화에 실패했습니다. 이 옵션은 진단용으로만 썼으며 운영 합격이나 드라이버 지원을 대신하지 않습니다.
+
+실패 지점은 `CheckVulkanProfile`/`RHIInit`으로 DTCctv 모듈 로드 전입니다. 플러그인 코드로 엔진 초기화 실패를 막을 수 없습니다. `-nullrhi`에서는 GPU 렌더링을 건너뛰고 디코딩만 수행합니다. Linux 렌더링 판정은 현재 `ENV_BLOCKED`이며, 정상 Linux GPU 서버에서 확인해야 합니다.
+
+운영 서버에서는 같은 디렉터리의 두 점검 파일을 사용합니다.
+
+```bash
+bash TestHost/Scripts/linux_server_check.sh /path/to/Linux "$RTSP_URL"
+```
+
+입력은 패키지 경로와 RTSP URL이며 Python3 표준 라이브러리만 필요합니다. 새 하네스의 `-CctvUrlEnv`로 인증 URL을 전달해 UE 명령행에 계정을 넣지 않고, 로그 URI와 Authorization을 가립니다. 임시 사용자 디렉터리는 자체 생성한 경로만 정리합니다. 기본 점검은 16채널·60초 이상·CUDA4/SW12·58fps·손실/재연결/프레임 대체0·1920x1080 비검은 타일 표본을 확인해 PASS/FAIL을 기록합니다. 입력 카메라는 1080p60 조건이어야 합니다. `--software-only`는 로더·SW 디코딩 범위만 확인하며 GPU 렌더링 합격을 뜻하지 않습니다. 이 PC에서의 구문·가능한 SW 실행 검증과 실제 GPU 서버 미실행 범위는 CCTV-01D 결과에 기록합니다.
+
 ## UMG에서 사용
 
 운영 프로젝트에 부모 클래스가 `UserWidget`인 위젯 블루프린트를 만듭니다.

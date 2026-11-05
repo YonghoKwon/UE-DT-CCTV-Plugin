@@ -50,6 +50,8 @@ while kill -0 "$game_pid" 2>/dev/null; do
 done
 if (( timed_out )); then
 	if [[ -r /proc/$game_pid/stat && $(awk '{print $22}' "/proc/$game_pid/stat") == "$start_ticks" ]]; then kill -TERM "$game_pid" 2>/dev/null || true; fi
+	sleep 2
+	if [[ -r /proc/$game_pid/stat && $(awk '{print $22}' "/proc/$game_pid/stat") == "$start_ticks" ]]; then kill -KILL "$game_pid" 2>/dev/null || true; fi
 fi
 wait "$game_pid"
 code=$?
