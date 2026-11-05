@@ -28,8 +28,9 @@ public class DTCctvFFmpeg : ModuleRules
 			foreach (string Lib in new[] { "libavcodec.so.62", "libavformat.so.62", "libavutil.so.60", "libswscale.so.9", "libswresample.so.6" })
 			{
 				string LibPath = Path.Combine(LibDir, Lib);
-				PublicAdditionalLibraries.Add(LibPath);
-				RuntimeDependencies.Add(LibPath);
+				// UBT는 버전 접미사를 가진 .so를 -l 이름으로 잘못 변환하므로 링커 스크립트를 사용한다.
+				PublicAdditionalLibraries.Add(Path.Combine(LibDir, Lib.Substring(0, Lib.LastIndexOf(".so") + 3)));
+				RuntimeDependencies.Add("$(BinaryOutputDir)/" + Lib, LibPath);
 			}
 		}
 	}

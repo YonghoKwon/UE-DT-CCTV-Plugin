@@ -9,4 +9,5 @@
 - 라이선스: LGPL v3 (`LICENSE.txt`), 동적 링크로만 사용합니다. Linux 최소 glibc 2.28.
 - 사용하는 라이브러리: avcodec, avformat, avutil, swscale, swresample
 - Linux 파일은 심볼릭 링크 없이 SONAME 이름(`libavcodec.so.62` 등)으로 저장합니다.
+- 확장자가 `.so`인 파일은 `INPUT(SONAME)` 텍스트 링커 스크립트입니다. UE 5.3 UBT의 버전 접미사 처리 오류를 피하며 바이너리 버전은 바꾸지 않습니다. 실행 시 SONAME 파일을 게임 실행 파일 옆에 스테이징합니다.
 - 바이너리는 Git LFS로 관리합니다. 클론 후 `git lfs pull`이 필요할 수 있습니다.
