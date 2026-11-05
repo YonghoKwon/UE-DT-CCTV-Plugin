@@ -2,7 +2,7 @@
 
 UE 5.3 프로젝트에서 RTSP CCTV를 표시하는 Windows·Linux용 C++ 플러그인입니다. DTCore나 운영 프로젝트에 의존하지 않으며 플러그인 안에 블루프린트·맵·위젯 에셋을 넣지 않습니다. 오디오는 지원하지 않습니다.
 
-현재 CCTV-01A의 코드 검토와 시험 준비까지 진행했습니다. **이번 C++ 변경은 빌드 미검증이며 CCTV-01의 패키지 재생·장애·크기 변경·장시간·Pixel Streaming 공존 게이트는 미수행입니다.** 사용자 요청으로 UE·빌드·GPU·Docker·송출 도구 실행과 프로세스 종료가 중단된 상태입니다.
+현재 CCTV-01B의 검수 결함 수정까지 진행했습니다. **이번 C++ 변경은 빌드 미검증이며 CCTV-01의 패키지 재생·장애·크기 변경·장시간·Pixel Streaming 공존 게이트는 미수행입니다.** 사용자 요청으로 UE·빌드·GPU·Docker·송출 도구 실행과 프로세스 종료가 중단된 상태입니다.
 
 ## 프로젝트에 적용
 
@@ -139,4 +139,4 @@ URL은 `DTCctvMaskUrlCredentials`로 계정을 가립니다. 운영 코드에서
 
 사용자 확인 항목: Windows·Linux에서 실제 시그널링 서버·클라이언트를 연결해 영상을 수신하고, NVENC 인코딩 활성 증거와 RTSP 16채널 동시 재생의 FPS·손실·GPU 자원 추세를 확인해야 합니다. 플러그인 로드 공존 합격만으로 이 동시 부하까지 합격했다고 해석하지 않습니다.
 
-설계와 미검증 항목은 [docs/DESIGN.md](docs/DESIGN.md), 이번 작업 결과는 `Saved/Reports/CCTV-01A/RESULT.md`를 참조하십시오.
+설계와 미검증 항목은 [docs/DESIGN.md](docs/DESIGN.md), 이번 작업 결과는 `Saved/Reports/CCTV-01B/RESULT.md`를 참조하십시오.
