@@ -6,6 +6,7 @@
 #include <mutex>
 
 struct AVPacket;
+struct FDTCctvStreamStats;
 
 /**
  * 읽기 스레드와 디코딩 스레드 사이의 상한 있는 패킷 큐.
@@ -33,6 +34,7 @@ public:
 
 	int32 Num() const;
 	int64 GetDroppedPackets() const;
+	void FillStats(FDTCctvStreamStats& Stats) const;
 
 private:
 	void ClearLocked(bool bCountAsDropped);
@@ -42,6 +44,10 @@ private:
 	TDeque<AVPacket*> Packets;
 	int32 MaxPackets;
 	int64 DroppedPackets = 0;
+	int32 PeakPackets = 0;
+	int64 KeyWaits = 0;
+	double KeyWaitStarted = 0.0;
+	double KeyWaitSeconds = 0.0;
 	bool bAborted = false;
 	bool bSkipUntilKeyFrame = false;
 	bool bDiscontinuity = false;

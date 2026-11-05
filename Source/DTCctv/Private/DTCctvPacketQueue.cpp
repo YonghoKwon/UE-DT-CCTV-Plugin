@@ -1,6 +1,8 @@
 #include "DTCctvPacketQueue.h"
 
 #include "DTCctvFFmpegInclude.h"
+#include "DTCctvTypes.h"
+#include "HAL/PlatformTime.h"
 
 FDTCctvPacketQueue::FDTCctvPacketQueue(int32 InMaxPackets)
 	: MaxPackets(FMath::Max(1, InMaxPackets))
@@ -42,6 +44,8 @@ void FDTCctvPacketQueue::Push(AVPacket* Source)
 		{
 			ClearLocked(true);
 			bSkipUntilKeyFrame = true;
+			++KeyWaits;
+			KeyWaitStarted = FPlatformTime::Seconds();
 		}
 
 		if (bSkipUntilKeyFrame)
@@ -53,6 +57,8 @@ void FDTCctvPacketQueue::Push(AVPacket* Source)
 				return;
 			}
 			bSkipUntilKeyFrame = false;
+			KeyWaitSeconds += FPlatformTime::Seconds() - KeyWaitStarted;
+			KeyWaitStarted = 0.0;
 			bDiscontinuity = true;
 		}
 
@@ -64,6 +70,7 @@ void FDTCctvPacketQueue::Push(AVPacket* Source)
 		}
 		av_packet_move_ref(Packet, Source);
 		Packets.EmplaceLast(Packet);
+		PeakPackets = FMath::Max(PeakPackets, Packets.Num());
 	}
 	Condition.notify_one();
 }
@@ -97,6 +104,11 @@ void FDTCctvPacketQueue::Reset()
 	std::lock_guard<std::mutex> Lock(Mutex);
 	ClearLocked(false);
 	bAborted = false;
+	if (bSkipUntilKeyFrame)
+	{
+		KeyWaitSeconds += FPlatformTime::Seconds() - KeyWaitStarted;
+		KeyWaitStarted = 0.0;
+	}
 	bSkipUntilKeyFrame = false;
 	bDiscontinuity = false;
 }
@@ -111,4 +123,15 @@ int64 FDTCctvPacketQueue::GetDroppedPackets() const
 {
 	std::lock_guard<std::mutex> Lock(Mutex);
 	return DroppedPackets;
+}
+
+void FDTCctvPacketQueue::FillStats(FDTCctvStreamStats& Stats) const
+{
+	std::lock_guard<std::mutex> Lock(Mutex);
+	Stats.PacketsDropped = DroppedPackets;
+	Stats.QueuedPackets = Packets.Num();
+	Stats.PeakQueuedPackets = PeakPackets;
+	Stats.PacketKeyWaits = KeyWaits;
+	Stats.PacketKeyWaitSeconds = KeyWaitSeconds + (bSkipUntilKeyFrame ? FPlatformTime::Seconds() - KeyWaitStarted : 0.0);
+	Stats.bWaitingForPacketKey = bSkipUntilKeyFrame;
 }

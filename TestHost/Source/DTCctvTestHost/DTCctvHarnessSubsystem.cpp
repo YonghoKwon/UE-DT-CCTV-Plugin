@@ -21,6 +21,14 @@
 #include "UnrealClient.h"
 #include "DynamicRHI.h"
 #include "RHIStats.h"
+#include "RenderingThread.h"
+#include <atomic>
+
+struct FDTCctvHarnessRenderStall
+{
+	std::atomic<double> Begin{ 0.0 };
+	std::atomic<double> End{ 0.0 };
+};
 
 DEFINE_LOG_CATEGORY_STATIC(LogDTCctvHarness, Log, All);
 
@@ -48,6 +56,9 @@ namespace
 		Total.PacketsDropped += Stats.PacketsDropped;
 		Total.DecodeErrors += Stats.DecodeErrors;
 		Total.Reconnects += Stats.Reconnects;
+		Total.PacketKeyWaits += Stats.PacketKeyWaits;
+		Total.PacketKeyWaitSeconds += Stats.PacketKeyWaitSeconds;
+		Total.PeakQueuedPackets = FMath::Max(Total.PeakQueuedPackets, Stats.PeakQueuedPackets);
 		Total.PeakQueuedFrames = FMath::Max(Total.PeakQueuedFrames, Stats.PeakQueuedFrames);
 		Total.PeakQueuedFrameBytes = FMath::Max(Total.PeakQueuedFrameBytes, Stats.PeakQueuedFrameBytes);
 		Total.FrameAgeSamples += Stats.FrameAgeSamples;
@@ -111,6 +122,10 @@ void UDTCctvHarnessSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	FParse::Value(CommandLine, TEXT("-CctvStallAt="), StallAtSeconds);
 	FParse::Value(CommandLine, TEXT("-CctvStallSeconds="), StallSeconds);
 	StallSeconds = FMath::Clamp(StallSeconds, 0.0, 10.0);
+	FParse::Value(CommandLine, TEXT("-CctvRenderStallAt="), RenderStallAtSeconds);
+	FParse::Value(CommandLine, TEXT("-CctvRenderStallSeconds="), RenderStallSeconds);
+	RenderStallSeconds = FMath::Clamp(RenderStallSeconds, 0.0, 10.0);
+	RenderStall = MakeShared<FDTCctvHarnessRenderStall, ESPMode::ThreadSafe>();
 	bSoftware = FParse::Param(CommandLine, TEXT("CctvSoftware"));
 	Count = FMath::Clamp(Count, 1, 64);
 	ResizeAffected = FMath::Clamp(ResizeAffected, 1, Count);
@@ -175,9 +190,9 @@ void UDTCctvHarnessSubsystem::BuildViews()
 	if (!CsvPath.IsEmpty())
 	{
 		FFileHelper::SaveStringToFile(
-			TEXT("t,frame_fps,max_frame_ms,used_mb,playing,decode_fps_avg,display_fps_avg,decoded,displayed,superseded,dropped,errors,reconnects,queued,output_w,decoder,codec,src_w,src_h,queued_frames,peak_queued_frames,render_in_flight,frame_age_samples,frame_age_total_ms,frame_age_mean_ms,frame_age_p95_ms,frame_age_max_ms,frame_age_latest_ms,frame_age_hist,queued_frame_bytes,peak_queued_frame_bytes,prepared_w,prepared_h,plane_texture_rebuilds,rhi_streaming_bytes,rhi_nonstreaming_bytes\n"),
+			TEXT("t,frame_fps,max_frame_ms,used_mb,playing,decode_fps_avg,display_fps_avg,decoded,displayed,superseded,dropped,errors,reconnects,queued,output_w,decoder,codec,src_w,src_h,queued_frames,peak_queued_frames,render_in_flight,frame_age_samples,frame_age_total_ms,frame_age_mean_ms,frame_age_p95_ms,frame_age_max_ms,frame_age_latest_ms,frame_age_hist,queued_frame_bytes,peak_queued_frame_bytes,prepared_w,prepared_h,plane_texture_rebuilds,rhi_streaming_bytes,rhi_nonstreaming_bytes,peak_queued_packets,packet_key_waits,packet_key_wait_seconds,packet_key_waiting\n"),
 			*CsvPath);
-		FFileHelper::SaveStringToFile(TEXT("t,channel,state,decode_fps,display_fps,decoded,displayed,dropped,errors,reconnects,output_w,output_h,src_w,src_h,view_w,view_h,cycle,closed,decoder,codec,queued_frames,peak_queued_frames,render_in_flight,frame_age_samples,frame_age_total_ms,frame_age_mean_ms,frame_age_p95_ms,frame_age_max_ms,frame_age_latest_ms,frame_age_hist,queued_frame_bytes,peak_queued_frame_bytes,prepared_w,prepared_h,plane_texture_rebuilds\n"), *ChannelCsvPath);
+		FFileHelper::SaveStringToFile(TEXT("t,channel,state,decode_fps,display_fps,decoded,displayed,dropped,errors,reconnects,output_w,output_h,src_w,src_h,view_w,view_h,cycle,closed,decoder,codec,queued_frames,peak_queued_frames,render_in_flight,frame_age_samples,frame_age_total_ms,frame_age_mean_ms,frame_age_p95_ms,frame_age_max_ms,frame_age_latest_ms,frame_age_hist,queued_frame_bytes,peak_queued_frame_bytes,prepared_w,prepared_h,plane_texture_rebuilds,peak_queued_packets,packet_key_waits,packet_key_wait_seconds,packet_key_waiting\n"), *ChannelCsvPath);
 		FFileHelper::SaveStringToFile(TEXT("t,event,cycle\n"), *EventCsvPath);
 	}
 	WriteEvent(TEXT("start"), 0.0);
@@ -316,6 +331,7 @@ void UDTCctvHarnessSubsystem::WriteSample(float DeltaTime)
 	int32 QueuedFrames = 0, PeakFrames = 0, RenderCommands = 0;
 	int64 QueuedFrameBytes = 0, PeakQueuedFrameBytes = 0;
 	int32 PlaneTextureRebuilds = 0;
+	int32 PacketKeyWaiting = 0;
 	FIntPoint PreparedSize = FIntPoint::ZeroValue;
 	FDTCctvStreamStats FrameAgeTotals;
 	for (int32 Index = 0; Index < Views.Num(); ++Index)
@@ -327,14 +343,15 @@ void UDTCctvHarnessSubsystem::WriteSample(float DeltaTime)
 			continue;
 		}
 		const FDTCctvStreamStats Stats = GetLifetimeStats(Index);
-		ChannelLines += FString::Printf(TEXT("%.3f,%d,%d,%.3f,%.3f,%lld,%lld,%lld,%lld,%d,%d,%d,%d,%d,%.1f,%.1f,%d,%d,%s,%s,%d,%d,%d,%lld,%.3f,%.3f,%.3f,%.3f,%.3f,%s,%lld,%lld,%d,%d,%d\n"),
+		ChannelLines += FString::Printf(TEXT("%.3f,%d,%d,%.3f,%.3f,%lld,%lld,%lld,%lld,%d,%d,%d,%d,%d,%.1f,%.1f,%d,%d,%s,%s,%d,%d,%d,%lld,%.3f,%.3f,%.3f,%.3f,%.3f,%s,%lld,%lld,%d,%d,%d,%d,%lld,%.3f,%d\n"),
 			Now - StartSeconds, Index, static_cast<int32>(Stats.State), Stats.DecodeFps, Stats.DisplayFps,
 			Stats.FramesDecoded, Stats.FramesDisplayed, Stats.PacketsDropped, Stats.DecodeErrors, Stats.Reconnects,
 			Stats.OutputSize.X, Stats.OutputSize.Y, Stats.SourceSize.X, Stats.SourceSize.Y,
 			RequestedSizes[Index].X, RequestedSizes[Index].Y, CompletedCycles, bCycleClosed ? 1 : 0, *Stats.DecoderName, *Stats.CodecName,
 			Stats.QueuedFrames, Stats.PeakQueuedFrames, Stats.RenderCommandsInFlight,
 			Stats.FrameAgeSamples, Stats.FrameAgeTotalMs, Stats.FrameAgeMeanMs, Stats.FrameAgeP95Ms, Stats.FrameAgeMaxMs, Stats.FrameAgeLatestMs,
-			*FrameAgeHistogramString(Stats), Stats.QueuedFrameBytes, Stats.PeakQueuedFrameBytes, Stats.PreparedFrameSize.X, Stats.PreparedFrameSize.Y, Stats.PlaneTextureRebuilds);
+			*FrameAgeHistogramString(Stats), Stats.QueuedFrameBytes, Stats.PeakQueuedFrameBytes, Stats.PreparedFrameSize.X, Stats.PreparedFrameSize.Y, Stats.PlaneTextureRebuilds, Stats.PeakQueuedPackets, Stats.PacketKeyWaits, Stats.PacketKeyWaitSeconds, Stats.bWaitingForPacketKey ? 1 : 0);
+		PacketKeyWaiting += Stats.bWaitingForPacketKey ? 1 : 0;
 		QueuedFrameBytes += Stats.QueuedFrameBytes;
 		PeakQueuedFrameBytes = FMath::Max(PeakQueuedFrameBytes, Stats.PeakQueuedFrameBytes);
 		PreparedSize = Stats.PreparedFrameSize;
@@ -367,12 +384,12 @@ void UDTCctvHarnessSubsystem::WriteSample(float DeltaTime)
 	{
 		RHIGetTextureMemoryStats(TextureMemory);
 	}
-	const FString Line = FString::Printf(TEXT("%.1f,%.1f,%.1f,%llu,%d,%.1f,%.1f,%lld,%lld,%lld,%lld,%lld,%d,%d,%d,%s,%s,%d,%d,%d,%d,%d,%lld,%.3f,%.3f,%.3f,%.3f,%.3f,%s,%lld,%lld,%d,%d,%d,%llu,%llu\n"),
+	const FString Line = FString::Printf(TEXT("%.1f,%.1f,%.1f,%llu,%d,%.1f,%.1f,%lld,%lld,%lld,%lld,%lld,%d,%d,%d,%s,%s,%d,%d,%d,%d,%d,%lld,%.3f,%.3f,%.3f,%.3f,%.3f,%s,%lld,%lld,%d,%d,%d,%llu,%llu,%d,%lld,%.3f,%d\n"),
 		Now - StartSeconds, FramesThisWindow / Window, MaxFrameMs, UsedMb, Playing,
 		DecodeFps / ViewCount, DisplayFps / ViewCount, Decoded, Displayed, Superseded, Dropped, Errors, Reconnects, Queued,
 		OutputWidth, *Decoder, *Codec, SourceW, SourceH, QueuedFrames, PeakFrames, RenderCommands,
 		FrameAgeTotals.FrameAgeSamples, FrameAgeTotals.FrameAgeTotalMs, FrameAgeTotals.FrameAgeMeanMs, FrameAgeTotals.FrameAgeP95Ms, FrameAgeTotals.FrameAgeMaxMs, FrameAgeTotals.FrameAgeLatestMs,
-		*FrameAgeHistogramString(FrameAgeTotals), QueuedFrameBytes, PeakQueuedFrameBytes, PreparedSize.X, PreparedSize.Y, PlaneTextureRebuilds, TextureMemory.StreamingMemorySize, TextureMemory.NonStreamingMemorySize);
+		*FrameAgeHistogramString(FrameAgeTotals), QueuedFrameBytes, PeakQueuedFrameBytes, PreparedSize.X, PreparedSize.Y, PlaneTextureRebuilds, TextureMemory.StreamingMemorySize, TextureMemory.NonStreamingMemorySize, FrameAgeTotals.PeakQueuedPackets, FrameAgeTotals.PacketKeyWaits, FrameAgeTotals.PacketKeyWaitSeconds, PacketKeyWaiting);
 	UE_LOG(LogDTCctvHarness, Log, TEXT("%s"), *Line.TrimEnd());
 	if (!CsvPath.IsEmpty())
 	{
@@ -394,6 +411,28 @@ void UDTCctvHarnessSubsystem::Tick(float DeltaTime)
 	}
 
 	double Elapsed = FPlatformTime::Seconds() - StartSeconds;
+	if (!bRenderStallQueued && RenderStallAtSeconds > 0.0 && Elapsed >= RenderStallAtSeconds && FApp::CanEverRender())
+	{
+		bRenderStallQueued = true;
+		const TSharedPtr<FDTCctvHarnessRenderStall, ESPMode::ThreadSafe> State = RenderStall;
+		const double Seconds = RenderStallSeconds;
+		ENQUEUE_RENDER_COMMAND(DTCctvHarnessRenderStall)([State, Seconds](FRHICommandListImmediate&)
+		{
+			State->Begin.store(FPlatformTime::Seconds());
+			FPlatformProcess::SleepNoStats(Seconds);
+			State->End.store(FPlatformTime::Seconds());
+		});
+	}
+	if (!bRenderStallBeginWritten && RenderStall->Begin.load() > 0.0)
+	{
+		bRenderStallBeginWritten = true;
+		WriteEvent(TEXT("render-stall-begin"), RenderStall->Begin.load() - StartSeconds);
+	}
+	if (!bRenderStallEndWritten && RenderStall->End.load() > 0.0)
+	{
+		bRenderStallEndWritten = true;
+		WriteEvent(TEXT("render-stall-end"), RenderStall->End.load() - StartSeconds);
+	}
 	if (!bStallDone && StallAtSeconds > 0.0 && Elapsed >= StallAtSeconds)
 	{
 		bStallDone = true;

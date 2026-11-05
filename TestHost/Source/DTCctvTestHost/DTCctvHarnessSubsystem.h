@@ -9,6 +9,7 @@
 
 class UDTCctvView;
 class UCanvasPanel;
+struct FDTCctvHarnessRenderStall;
 
 /** UUserWidget은 추상 클래스라 코드로 위젯을 구성할 최소 파생 클래스를 둔다. */
 UCLASS()
@@ -55,6 +56,12 @@ private:
 	bool bStallDone = false;
 	double StallAtSeconds = 0.0;
 	double StallSeconds = 2.0;
+	double RenderStallAtSeconds = 0.0;
+	double RenderStallSeconds = 5.0;
+	bool bRenderStallQueued = false;
+	bool bRenderStallBeginWritten = false;
+	bool bRenderStallEndWritten = false;
+	TSharedPtr<FDTCctvHarnessRenderStall, ESPMode::ThreadSafe> RenderStall;
 	FString Url;
 	FString SubUrl;
 	FString CsvPath;

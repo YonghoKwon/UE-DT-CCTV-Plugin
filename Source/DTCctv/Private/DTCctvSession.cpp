@@ -255,10 +255,9 @@ void FDTCctvSession::FillStats(FDTCctvStreamStats& Stats) const
 	Stats.PacketsReceived = PacketsReceived.load();
 	Stats.FramesDecoded = FramesDecoded.load();
 	Stats.FramesSuperseded = FramesSuperseded.load();
-	Stats.PacketsDropped = Queue.GetDroppedPackets();
+	Queue.FillStats(Stats);
 	Stats.DecodeErrors = DecodeErrors.load();
 	Stats.Reconnects = Reconnects.load();
-	Stats.QueuedPackets = Queue.Num();
 
 	FScopeLock ScopeLock(&Lock);
 	Stats.SourceSize = SourceSize;

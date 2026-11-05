@@ -118,6 +118,18 @@ struct FDTCctvStreamStats
 	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
 	int32 QueuedPackets = 0;
 
+	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
+	int32 PeakQueuedPackets = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
+	int64 PacketKeyWaits = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
+	double PacketKeyWaitSeconds = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
+	bool bWaitingForPacketKey = false;
+
 	/** 렌더링을 기다리는 디코딩 프레임 수. 압축 패킷 큐와 구분한다. */
 	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
 	int32 QueuedFrames = 0;

@@ -49,6 +49,9 @@ namespace
 		Total.PacketsDropped += Stats.PacketsDropped;
 		Total.DecodeErrors += Stats.DecodeErrors;
 		Total.Reconnects += Stats.Reconnects;
+		Total.PacketKeyWaits += Stats.PacketKeyWaits;
+		Total.PacketKeyWaitSeconds += Stats.PacketKeyWaitSeconds;
+		Total.PeakQueuedPackets = FMath::Max(Total.PeakQueuedPackets, Stats.PeakQueuedPackets);
 		Total.PeakQueuedFrames = FMath::Max(Total.PeakQueuedFrames, Stats.PeakQueuedFrames);
 		Total.PeakQueuedFrameBytes = FMath::Max(Total.PeakQueuedFrameBytes, Stats.PeakQueuedFrameBytes);
 		DTCctvMergeFrameAgeStats(Total, Stats);
@@ -364,6 +367,9 @@ FDTCctvStreamStats UDTCctvStream::GetStats() const
 	Stats.PacketsDropped += Accumulated.PacketsDropped;
 	Stats.DecodeErrors += Accumulated.DecodeErrors;
 	Stats.Reconnects += Accumulated.Reconnects;
+	Stats.PacketKeyWaits += Accumulated.PacketKeyWaits;
+	Stats.PacketKeyWaitSeconds += Accumulated.PacketKeyWaitSeconds;
+	Stats.PeakQueuedPackets = FMath::Max(Stats.PeakQueuedPackets, Accumulated.PeakQueuedPackets);
 	Stats.PeakQueuedFrames = FMath::Max(Stats.PeakQueuedFrames, Accumulated.PeakQueuedFrames);
 	Stats.PeakQueuedFrameBytes = FMath::Max(Stats.PeakQueuedFrameBytes, Accumulated.PeakQueuedFrameBytes);
 	DTCctvMergeFrameAgeStats(Stats, Accumulated);
