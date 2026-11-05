@@ -5,6 +5,10 @@ $script:DTCctvLastIdleCheck = [datetime]::MinValue
 function Assert-DTCctvMeasurementIdle
 {
 	param([System.Collections.Generic.List[object]]$Owned, [switch]$Force)
+	if ($env:DTCCTV_CANCEL_FILE -and (Test-Path -LiteralPath $env:DTCCTV_CANCEL_FILE))
+	{
+		throw [System.OperationCanceledException]::new('작업 중단 파일을 확인하여 자체 측정을 정리합니다.')
+	}
 	$now = [datetime]::UtcNow
 	if (-not $Force -and ($now - $script:DTCctvLastIdleCheck).TotalSeconds -lt 5) { return }
 	$script:DTCctvLastIdleCheck = $now
