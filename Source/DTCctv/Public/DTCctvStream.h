@@ -44,6 +44,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "DTCctv")
 	FDTCctvStreamStats GetStats() const;
 
+	/** 시험 워밍업 이후 새 지연 표본창을 시작한다. 기존 프레임·손실 카운터는 보존한다. */
+	void ResetFrameAgeStats();
+
 	/** 서브 스트림 사용 여부를 직접 정한다. 새 스트림의 첫 프레임이 나올 때 전환한다. */
 	UFUNCTION(BlueprintCallable, Category = "DTCctv")
 	void SetUseSubStream(bool bUseSubStream);

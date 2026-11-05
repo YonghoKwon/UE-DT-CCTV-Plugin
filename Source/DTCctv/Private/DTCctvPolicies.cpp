@@ -1,4 +1,80 @@
 #include "DTCctvPolicies.h"
+#include "DTCctvTypes.h"
+
+namespace
+{
+	constexpr int32 FrameAgeOverflowBin = 1001;
+
+	void ComputeFrameAgeSummary(FDTCctvStreamStats& Stats)
+	{
+		Stats.FrameAgeMeanMs = Stats.FrameAgeSamples > 0 ? Stats.FrameAgeTotalMs / Stats.FrameAgeSamples : 0.0;
+		Stats.FrameAgeP95Ms = 0.0;
+		const int64 Target = FMath::CeilToInt64(Stats.FrameAgeSamples * 0.95);
+		int64 Cumulative = 0;
+		for (int32 Bin = 0; Target > 0 && Bin < Stats.FrameAgeHistogram.Num(); ++Bin)
+		{
+			Cumulative += Stats.FrameAgeHistogram[Bin];
+			if (Cumulative >= Target)
+			{
+				Stats.FrameAgeP95Ms = Bin == FrameAgeOverflowBin ? Stats.FrameAgeMaxMs : Bin;
+				break;
+			}
+		}
+	}
+}
+
+void FDTCctvFrameAgeAccumulator::Record(double AgeMs)
+{
+	AgeMs = FMath::Max(0.0, AgeMs);
+	if (Histogram.IsEmpty())
+	{
+		Histogram.SetNumZeroed(FrameAgeOverflowBin + 1);
+	}
+	const int32 Bin = AgeMs > 1000.0 ? FrameAgeOverflowBin : FMath::CeilToInt(AgeMs);
+	++Histogram[Bin];
+	++Samples;
+	TotalMs += AgeMs;
+	MaxMs = FMath::Max(MaxMs, AgeMs);
+	LatestMs = AgeMs;
+}
+
+void FDTCctvFrameAgeAccumulator::FillStats(FDTCctvStreamStats& Stats) const
+{
+	Stats.FrameAgeSamples = Samples;
+	Stats.FrameAgeTotalMs = TotalMs;
+	Stats.FrameAgeMaxMs = MaxMs;
+	Stats.FrameAgeLatestMs = LatestMs;
+	Stats.FrameAgeHistogram = Histogram;
+	ComputeFrameAgeSummary(Stats);
+}
+
+void DTCctvMergeFrameAgeStats(FDTCctvStreamStats& Total, const FDTCctvStreamStats& Stats)
+{
+	const bool bHadSamples = Total.FrameAgeSamples > 0;
+	Total.FrameAgeSamples += Stats.FrameAgeSamples;
+	Total.FrameAgeTotalMs += Stats.FrameAgeTotalMs;
+	Total.FrameAgeMaxMs = FMath::Max(Total.FrameAgeMaxMs, Stats.FrameAgeMaxMs);
+	if (!bHadSamples)
+	{
+		Total.FrameAgeLatestMs = Stats.FrameAgeLatestMs;
+	}
+	if (Total.FrameAgeHistogram.Num() < Stats.FrameAgeHistogram.Num())
+	{
+		Total.FrameAgeHistogram.SetNumZeroed(Stats.FrameAgeHistogram.Num());
+	}
+	for (int32 Bin = 0; Bin < Stats.FrameAgeHistogram.Num(); ++Bin)
+	{
+		Total.FrameAgeHistogram[Bin] += Stats.FrameAgeHistogram[Bin];
+	}
+	ComputeFrameAgeSummary(Total);
+}
+
+void DTCctvClearFrameAgeStats(FDTCctvStreamStats& Stats)
+{
+	Stats.FrameAgeSamples = 0;
+	Stats.FrameAgeTotalMs = Stats.FrameAgeMeanMs = Stats.FrameAgeP95Ms = Stats.FrameAgeMaxMs = Stats.FrameAgeLatestMs = 0.0;
+	Stats.FrameAgeHistogram.Reset();
+}
 
 FString DTCctvMaskUrlCredentials(const FString& Text)
 {

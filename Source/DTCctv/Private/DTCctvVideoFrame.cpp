@@ -1,10 +1,12 @@
 #include "DTCctvVideoFrame.h"
 
 #include "DTCctvFFmpegInclude.h"
+#include "HAL/PlatformTime.h"
 
 FDTCctvVideoFrame::FDTCctvVideoFrame(AVFrame* InFrame, FIntPoint InSourceSize)
 	: Frame(InFrame)
 	, SourceSize(InSourceSize)
+	, DecodedSeconds(FPlatformTime::Seconds())
 {
 }
 

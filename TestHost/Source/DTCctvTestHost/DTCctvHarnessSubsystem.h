@@ -50,6 +50,7 @@ private:
 	bool bBuilt = false;
 	bool bShotTaken = false;
 	bool bSoftware = false;
+	bool bFrameAgeWarmupReset = false;
 	FString Url;
 	FString SubUrl;
 	FString CsvPath;

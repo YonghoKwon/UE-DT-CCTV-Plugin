@@ -50,6 +50,7 @@ namespace
 		Total.DecodeErrors += Stats.DecodeErrors;
 		Total.Reconnects += Stats.Reconnects;
 		Total.PeakQueuedFrames = FMath::Max(Total.PeakQueuedFrames, Stats.PeakQueuedFrames);
+		DTCctvMergeFrameAgeStats(Total, Stats);
 	}
 }
 
@@ -270,6 +271,7 @@ void UDTCctvStream::RenderLatestFrame()
 
 	RenderInFlight->fetch_add(1);
 	++FramesDisplayed;
+	Session->RecordFrameSubmitted(Frame->GetDecodedSeconds(), FPlatformTime::Seconds());
 
 	ENQUEUE_RENDER_COMMAND(DTCctvRenderFrame)(
 		[Frame, Renderer = Renderer, InFlight = RenderInFlight, Resource](FRHICommandListImmediate& RHICmdList)
@@ -348,12 +350,26 @@ FDTCctvStreamStats UDTCctvStream::GetStats() const
 	Stats.DecodeErrors += Accumulated.DecodeErrors;
 	Stats.Reconnects += Accumulated.Reconnects;
 	Stats.PeakQueuedFrames = FMath::Max(Stats.PeakQueuedFrames, Accumulated.PeakQueuedFrames);
+	DTCctvMergeFrameAgeStats(Stats, Accumulated);
 	Stats.RenderCommandsInFlight = RenderInFlight.IsValid() ? RenderInFlight->load() : 0;
 	Stats.FramesDisplayed = FramesDisplayed;
 	Stats.OutputSize = OutputSize;
 	Stats.DecodeFps = DecodeFps;
 	Stats.DisplayFps = DisplayFps;
 	return Stats;
+}
+
+void UDTCctvStream::ResetFrameAgeStats()
+{
+	DTCctvClearFrameAgeStats(Accumulated);
+	if (Session.IsValid())
+	{
+		Session->ResetFrameAgeStats();
+	}
+	if (PendingSession.IsValid())
+	{
+		PendingSession->ResetFrameAgeStats();
+	}
 }
 
 TStatId UDTCctvStream::GetStatId() const

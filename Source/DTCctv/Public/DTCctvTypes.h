@@ -127,4 +127,25 @@ struct FDTCctvStreamStats
 
 	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
 	int32 RenderCommandsInFlight = 0;
+
+	/** 디코딩 완료부터 렌더 명령 등록까지의 시간. 네트워크 지연과 GPU 완료 시간은 제외한다. */
+	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
+	int64 FrameAgeSamples = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
+	double FrameAgeMeanMs = 0.0;
+
+	/** 1ms 히스토그램 구간의 상한으로 계산한다. */
+	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
+	double FrameAgeP95Ms = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
+	double FrameAgeMaxMs = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
+	double FrameAgeLatestMs = 0.0;
+
+	/** C++ 계측용 누적 합과 히스토그램. CSV는 비어 있지 않은 구간만 기록한다. */
+	double FrameAgeTotalMs = 0.0;
+	TArray<int64> FrameAgeHistogram;
 };

@@ -18,11 +18,13 @@ public:
 
 	FIntPoint GetSize() const;
 	FIntPoint GetSourceSize() const { return SourceSize; }
+	double GetDecodedSeconds() const { return DecodedSeconds; }
 	FDTCctvYuvPlanes GetPlanes() const;
 
 private:
 	AVFrame* Frame;
 	const FIntPoint SourceSize;
+	const double DecodedSeconds;
 };
 
 using FDTCctvVideoFramePtr = TSharedPtr<FDTCctvVideoFrame, ESPMode::ThreadSafe>;

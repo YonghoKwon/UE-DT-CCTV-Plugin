@@ -233,6 +233,19 @@ void FDTCctvSession::FillStats(FDTCctvStreamStats& Stats) const
 	Stats.PeakQueuedFrames = PeakQueuedFrames;
 	Stats.CodecName = CodecName;
 	Stats.DecoderName = DecoderName;
+	FrameAge.FillStats(Stats);
+}
+
+void FDTCctvSession::RecordFrameSubmitted(double DecodedSeconds, double SubmittedSeconds)
+{
+	FScopeLock ScopeLock(&Lock);
+	FrameAge.Record((SubmittedSeconds - DecodedSeconds) * 1000.0);
+}
+
+void FDTCctvSession::ResetFrameAgeStats()
+{
+	FScopeLock ScopeLock(&Lock);
+	FrameAge = FDTCctvFrameAgeAccumulator();
 }
 
 void FDTCctvSession::Retire(TSharedPtr<FDTCctvSession, ESPMode::ThreadSafe> Session)

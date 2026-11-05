@@ -23,6 +23,19 @@ DEFINE_LOG_CATEGORY_STATIC(LogDTCctvHarness, Log, All);
 
 namespace
 {
+	FString FrameAgeHistogramString(const FDTCctvStreamStats& Stats)
+	{
+		FString Result;
+		for (int32 Bin = 0; Bin < Stats.FrameAgeHistogram.Num(); ++Bin)
+		{
+			if (Stats.FrameAgeHistogram[Bin] > 0)
+			{
+				Result += FString::Printf(TEXT("%d:%lld;"), Bin, Stats.FrameAgeHistogram[Bin]);
+			}
+		}
+		return Result;
+	}
+
 	void AddCounters(FDTCctvStreamStats& Total, const FDTCctvStreamStats& Stats)
 	{
 		Total.PacketsReceived += Stats.PacketsReceived;
@@ -33,6 +46,30 @@ namespace
 		Total.DecodeErrors += Stats.DecodeErrors;
 		Total.Reconnects += Stats.Reconnects;
 		Total.PeakQueuedFrames = FMath::Max(Total.PeakQueuedFrames, Stats.PeakQueuedFrames);
+		Total.FrameAgeSamples += Stats.FrameAgeSamples;
+		Total.FrameAgeTotalMs += Stats.FrameAgeTotalMs;
+		Total.FrameAgeMaxMs = FMath::Max(Total.FrameAgeMaxMs, Stats.FrameAgeMaxMs);
+		Total.FrameAgeLatestMs = FMath::Max(Total.FrameAgeLatestMs, Stats.FrameAgeLatestMs);
+		if (Total.FrameAgeHistogram.Num() < Stats.FrameAgeHistogram.Num())
+		{
+			Total.FrameAgeHistogram.SetNumZeroed(Stats.FrameAgeHistogram.Num());
+		}
+		for (int32 Bin = 0; Bin < Stats.FrameAgeHistogram.Num(); ++Bin)
+		{
+			Total.FrameAgeHistogram[Bin] += Stats.FrameAgeHistogram[Bin];
+		}
+		Total.FrameAgeMeanMs = Total.FrameAgeSamples > 0 ? Total.FrameAgeTotalMs / Total.FrameAgeSamples : 0.0;
+		const int64 Target = FMath::CeilToInt64(Total.FrameAgeSamples * 0.95);
+		int64 Cumulative = 0;
+		for (int32 Bin = 0; Target > 0 && Bin < Total.FrameAgeHistogram.Num(); ++Bin)
+		{
+			Cumulative += Total.FrameAgeHistogram[Bin];
+			if (Cumulative >= Target)
+			{
+				Total.FrameAgeP95Ms = Bin == 1001 ? Total.FrameAgeMaxMs : Bin;
+				break;
+			}
+		}
 	}
 }
 
@@ -131,9 +168,9 @@ void UDTCctvHarnessSubsystem::BuildViews()
 	if (!CsvPath.IsEmpty())
 	{
 		FFileHelper::SaveStringToFile(
-			TEXT("t,frame_fps,max_frame_ms,used_mb,playing,decode_fps_avg,display_fps_avg,decoded,displayed,superseded,dropped,errors,reconnects,queued,output_w,decoder,codec,src_w,src_h,queued_frames,peak_queued_frames,render_in_flight\n"),
+			TEXT("t,frame_fps,max_frame_ms,used_mb,playing,decode_fps_avg,display_fps_avg,decoded,displayed,superseded,dropped,errors,reconnects,queued,output_w,decoder,codec,src_w,src_h,queued_frames,peak_queued_frames,render_in_flight,frame_age_samples,frame_age_total_ms,frame_age_mean_ms,frame_age_p95_ms,frame_age_max_ms,frame_age_latest_ms,frame_age_hist\n"),
 			*CsvPath);
-		FFileHelper::SaveStringToFile(TEXT("t,channel,state,decode_fps,display_fps,decoded,displayed,dropped,errors,reconnects,output_w,output_h,src_w,src_h,view_w,view_h,cycle,closed,decoder,codec,queued_frames,peak_queued_frames,render_in_flight\n"), *ChannelCsvPath);
+		FFileHelper::SaveStringToFile(TEXT("t,channel,state,decode_fps,display_fps,decoded,displayed,dropped,errors,reconnects,output_w,output_h,src_w,src_h,view_w,view_h,cycle,closed,decoder,codec,queued_frames,peak_queued_frames,render_in_flight,frame_age_samples,frame_age_total_ms,frame_age_mean_ms,frame_age_p95_ms,frame_age_max_ms,frame_age_latest_ms,frame_age_hist\n"), *ChannelCsvPath);
 		FFileHelper::SaveStringToFile(TEXT("t,event,cycle\n"), *EventCsvPath);
 	}
 	WriteEvent(TEXT("start"), 0.0);
@@ -270,6 +307,7 @@ void UDTCctvHarnessSubsystem::WriteSample(float DeltaTime)
 	FString Decoder, Codec;
 	FString ChannelLines;
 	int32 QueuedFrames = 0, PeakFrames = 0, RenderCommands = 0;
+	FDTCctvStreamStats FrameAgeTotals;
 	for (int32 Index = 0; Index < Views.Num(); ++Index)
 	{
 		const UDTCctvView* View = Views[Index];
@@ -279,12 +317,15 @@ void UDTCctvHarnessSubsystem::WriteSample(float DeltaTime)
 			continue;
 		}
 		const FDTCctvStreamStats Stats = GetLifetimeStats(Index);
-		ChannelLines += FString::Printf(TEXT("%.3f,%d,%d,%.3f,%.3f,%lld,%lld,%lld,%lld,%d,%d,%d,%d,%d,%.1f,%.1f,%d,%d,%s,%s,%d,%d,%d\n"),
+		ChannelLines += FString::Printf(TEXT("%.3f,%d,%d,%.3f,%.3f,%lld,%lld,%lld,%lld,%d,%d,%d,%d,%d,%.1f,%.1f,%d,%d,%s,%s,%d,%d,%d,%lld,%.3f,%.3f,%.3f,%.3f,%.3f,%s\n"),
 			Now - StartSeconds, Index, static_cast<int32>(Stats.State), Stats.DecodeFps, Stats.DisplayFps,
 			Stats.FramesDecoded, Stats.FramesDisplayed, Stats.PacketsDropped, Stats.DecodeErrors, Stats.Reconnects,
 			Stats.OutputSize.X, Stats.OutputSize.Y, Stats.SourceSize.X, Stats.SourceSize.Y,
 			RequestedSizes[Index].X, RequestedSizes[Index].Y, CompletedCycles, bCycleClosed ? 1 : 0, *Stats.DecoderName, *Stats.CodecName,
-			Stats.QueuedFrames, Stats.PeakQueuedFrames, Stats.RenderCommandsInFlight);
+			Stats.QueuedFrames, Stats.PeakQueuedFrames, Stats.RenderCommandsInFlight,
+			Stats.FrameAgeSamples, Stats.FrameAgeTotalMs, Stats.FrameAgeMeanMs, Stats.FrameAgeP95Ms, Stats.FrameAgeMaxMs, Stats.FrameAgeLatestMs,
+			*FrameAgeHistogramString(Stats));
+		AddCounters(FrameAgeTotals, Stats);
 		QueuedFrames += Stats.QueuedFrames;
 		PeakFrames = FMath::Max(PeakFrames, Stats.PeakQueuedFrames);
 		RenderCommands += Stats.RenderCommandsInFlight;
@@ -307,10 +348,12 @@ void UDTCctvHarnessSubsystem::WriteSample(float DeltaTime)
 
 	const int32 ViewCount = FMath::Max(1, Views.Num());
 	const uint64 UsedMb = FPlatformMemory::GetStats().UsedPhysical / (1024 * 1024);
-	const FString Line = FString::Printf(TEXT("%.1f,%.1f,%.1f,%llu,%d,%.1f,%.1f,%lld,%lld,%lld,%lld,%lld,%d,%d,%d,%s,%s,%d,%d,%d,%d,%d\n"),
+	const FString Line = FString::Printf(TEXT("%.1f,%.1f,%.1f,%llu,%d,%.1f,%.1f,%lld,%lld,%lld,%lld,%lld,%d,%d,%d,%s,%s,%d,%d,%d,%d,%d,%lld,%.3f,%.3f,%.3f,%.3f,%.3f,%s\n"),
 		Now - StartSeconds, FramesThisWindow / Window, MaxFrameMs, UsedMb, Playing,
 		DecodeFps / ViewCount, DisplayFps / ViewCount, Decoded, Displayed, Superseded, Dropped, Errors, Reconnects, Queued,
-		OutputWidth, *Decoder, *Codec, SourceW, SourceH, QueuedFrames, PeakFrames, RenderCommands);
+		OutputWidth, *Decoder, *Codec, SourceW, SourceH, QueuedFrames, PeakFrames, RenderCommands,
+		FrameAgeTotals.FrameAgeSamples, FrameAgeTotals.FrameAgeTotalMs, FrameAgeTotals.FrameAgeMeanMs, FrameAgeTotals.FrameAgeP95Ms, FrameAgeTotals.FrameAgeMaxMs, FrameAgeTotals.FrameAgeLatestMs,
+		*FrameAgeHistogramString(FrameAgeTotals));
 	UE_LOG(LogDTCctvHarness, Log, TEXT("%s"), *Line.TrimEnd());
 	if (!CsvPath.IsEmpty())
 	{
@@ -332,6 +375,21 @@ void UDTCctvHarnessSubsystem::Tick(float DeltaTime)
 	}
 
 	const double Elapsed = FPlatformTime::Seconds() - StartSeconds;
+	if (!bFrameAgeWarmupReset && Elapsed >= 10.0)
+	{
+		for (int32 Index = 0; Index < Views.Num(); ++Index)
+		{
+			if (UDTCctvStream* Stream = Views[Index]->GetStream())
+			{
+				Stream->ResetFrameAgeStats();
+			}
+			ClosedTotals[Index].FrameAgeSamples = 0;
+			ClosedTotals[Index].FrameAgeTotalMs = ClosedTotals[Index].FrameAgeMeanMs = ClosedTotals[Index].FrameAgeP95Ms = ClosedTotals[Index].FrameAgeMaxMs = 0.0;
+			ClosedTotals[Index].FrameAgeHistogram.Reset();
+		}
+		bFrameAgeWarmupReset = true;
+		WriteEvent(TEXT("frame-age-warmup-reset"), Elapsed);
+	}
 	UpdateScenario(Elapsed);
 	WriteSample(DeltaTime);
 	if (ShotEvery > 0.0 && !ShotPath.IsEmpty() && Elapsed >= NextShotSeconds && FApp::CanEverRender())

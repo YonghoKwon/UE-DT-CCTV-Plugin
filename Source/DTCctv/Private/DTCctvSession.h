@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "DTCctvFFmpegInclude.h"
 #include "DTCctvPacketQueue.h"
+#include "DTCctvPolicies.h"
 #include "DTCctvTypes.h"
 #include "DTCctvVideoFrame.h"
 #include "HAL/CriticalSection.h"
@@ -52,6 +53,8 @@ public:
 
 	/** 세션에서 알 수 있는 통계를 채운다. 화면 관련 값은 UDTCctvStream이 채운다. */
 	void FillStats(FDTCctvStreamStats& Stats) const;
+	void RecordFrameSubmitted(double DecodedSeconds, double SubmittedSeconds);
+	void ResetFrameAgeStats();
 
 	/** 세션을 넘겨받아 스레드가 끝나면 해제한다. 게임 스레드에서 호출한다. */
 	static void Retire(TSharedPtr<FDTCctvSession, ESPMode::ThreadSafe> Session);
@@ -116,6 +119,7 @@ private:
 	FIntPoint DesiredOutputSize = FIntPoint::ZeroValue;
 	TArray<FDTCctvVideoFramePtr, TInlineAllocator<8>> PendingFrames;
 	int32 PeakQueuedFrames = 0;
+	FDTCctvFrameAgeAccumulator FrameAge;
 	FString CodecName;
 	FString DecoderName;
 };

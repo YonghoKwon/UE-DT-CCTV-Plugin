@@ -2,6 +2,26 @@
 
 #include "CoreMinimal.h"
 
+struct FDTCctvStreamStats;
+
+/** 1ms 구간과 1초 초과 구간으로 모든 제출 프레임을 집계한다. 표본을 추출하지 않는다. */
+class FDTCctvFrameAgeAccumulator
+{
+public:
+	void Record(double AgeMs);
+	void FillStats(FDTCctvStreamStats& Stats) const;
+
+private:
+	int64 Samples = 0;
+	double TotalMs = 0.0;
+	double MaxMs = 0.0;
+	double LatestMs = 0.0;
+	TArray<int64> Histogram;
+};
+
+void DTCctvMergeFrameAgeStats(FDTCctvStreamStats& Total, const FDTCctvStreamStats& Stats);
+void DTCctvClearFrameAgeStats(FDTCctvStreamStats& Stats);
+
 /** 로그에 남기기 전에 URL의 계정 정보를 가린다. */
 FString DTCctvMaskUrlCredentials(const FString& Text);
 

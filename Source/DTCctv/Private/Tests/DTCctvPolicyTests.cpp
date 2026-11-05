@@ -249,4 +249,33 @@ bool FDTCctvFrameBurstTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDTCctvFrameAgeTest, "DTCctv.Policies.FrameAge", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::SmokeFilter)
+bool FDTCctvFrameAgeTest::RunTest(const FString& Parameters)
+{
+	FDTCctvFrameAgeAccumulator Age;
+	for (int32 Index = 0; Index < 19; ++Index)
+	{
+		Age.Record(0.1);
+	}
+	Age.Record(100.0);
+	FDTCctvStreamStats Stats;
+	Age.FillStats(Stats);
+	TestEqual(TEXT("모든 프레임 집계"), Stats.FrameAgeSamples, int64(20));
+	TestEqual(TEXT("p95는 보수적인 구간 상한"), Stats.FrameAgeP95Ms, 1.0);
+	TestEqual(TEXT("최대 지연 보존"), Stats.FrameAgeMaxMs, 100.0);
+	TestTrue(TEXT("평균은 실제 합으로 계산"), FMath::IsNearlyEqual(Stats.FrameAgeMeanMs, 5.095, 0.00001));
+	FDTCctvFrameAgeAccumulator Overflow;
+	Overflow.Record(2000.0);
+	FDTCctvStreamStats Other;
+	Overflow.FillStats(Other);
+	TestEqual(TEXT("1초 초과를 작은 값으로 포화시키지 않음"), Other.FrameAgeP95Ms, 2000.0);
+	DTCctvMergeFrameAgeStats(Stats, Other);
+	TestEqual(TEXT("세션 합산 후 표본 수"), Stats.FrameAgeSamples, int64(21));
+	TestEqual(TEXT("합산 p95 재계산"), Stats.FrameAgeP95Ms, 100.0);
+	DTCctvClearFrameAgeStats(Stats);
+	TestEqual(TEXT("워밍업 제외 후 표본 초기화"), Stats.FrameAgeSamples, int64(0));
+	TestTrue(TEXT("히스토그램 초기화"), Stats.FrameAgeHistogram.IsEmpty());
+	return true;
+}
+
 #endif
