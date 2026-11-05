@@ -76,8 +76,17 @@ void DTCctvClearFrameAgeStats(FDTCctvStreamStats& Stats)
 	Stats.FrameAgeHistogram.Reset();
 }
 
-int32 DTCctvChooseStaleFrameSkip(TConstArrayView<double> FrameAgesSeconds, double BacklogSeconds)
+bool DTCctvCanCatchUp(double TickSeconds, double SourceFps)
 {
+	return TickSeconds > 0.0 && SourceFps > 0.0 && 1.0 / TickSeconds >= SourceFps * 1.25;
+}
+
+int32 DTCctvChooseStaleFrameSkip(TConstArrayView<double> FrameAgesSeconds, double BacklogSeconds, bool bCanCatchUp)
+{
+	if (bCanCatchUp && BacklogSeconds < 0.75)
+	{
+		return 0;
+	}
 	if (FrameAgesSeconds.Num() < 2 || (BacklogSeconds < 0.1 && FrameAgesSeconds[0] <= 0.1))
 	{
 		return 0;

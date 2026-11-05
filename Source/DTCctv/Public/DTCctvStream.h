@@ -105,6 +105,7 @@ private:
 	float DecodeFps = 0.f;
 	float DisplayFps = 0.f;
 	double StatsWindowStart = 0.0;
+	double SmoothedTickSeconds = 0.0;
 	int64 StatsWindowDecoded = 0;
 	int64 StatsWindowDisplayed = 0;
 };

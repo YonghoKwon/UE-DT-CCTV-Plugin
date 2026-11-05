@@ -42,7 +42,8 @@ public:
 	bool IsFinished() const { return bFinished.load(); }
 
 	/** 표시 대기 중인 가장 오래된 프레임을 가져간다. 없으면 nullptr. */
-	FDTCctvVideoFramePtr TakeFrame();
+	FDTCctvVideoFramePtr TakeFrame(bool bCanCatchUp = false);
+	double GetNominalFps() const { return NominalFps.load(); }
 
 	EDTCctvState GetState() const { return State.load(); }
 	bool HasDecodedFrame() const { return FramesDecoded.load() > 0; }
@@ -66,6 +67,8 @@ private:
 	friend class FDTCctvHwFallbackTest;
 	friend class FDTCctvFrameBurstTest;
 	friend class FDTCctvPreparedSizeTest;
+	friend class FDTCctvFrameMemoryTest;
+	friend class FDTCctvFrameBackpressureTest;
 #endif
 	class FWorker;
 
@@ -97,6 +100,7 @@ private:
 	FDTCctvPacketQueue Queue;
 
 	FEvent* StopEvent = nullptr;
+	FEvent* FrameSpaceEvent = nullptr;
 	TUniquePtr<FWorker> ReaderWorker;
 	TUniquePtr<FRunnableThread> ReaderThread;
 	TUniquePtr<FWorker> DecoderWorker;
@@ -105,9 +109,11 @@ private:
 	std::atomic<bool> bStop{ false };
 	std::atomic<bool> bFinished{ false };
 	std::atomic<bool> bHwFailed{ false };
+	std::atomic<bool> bConsumerCanCatchUp{ false };
 	std::atomic<double> Deadline{ 0.0 };
 	std::atomic<double> LastFrameSeconds{ 0.0 };
 	std::atomic<double> FirstFrameSeconds{ 0.0 };
+	std::atomic<double> NominalFps{ 0.0 };
 	std::atomic<EDTCctvState> State{ EDTCctvState::Idle };
 	std::atomic<int64> PacketsReceived{ 0 };
 	std::atomic<int64> FramesDecoded{ 0 };

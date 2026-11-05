@@ -8,6 +8,9 @@
 #include "DTCctvSession.h"
 #include "DTCctvVideoFrame.h"
 #include "DTCctvYuvRenderer.h"
+#include "Async/Async.h"
+#include "HAL/PlatformProcess.h"
+#include "HAL/PlatformTime.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDTCctvMaskUrlTest, "DTCctv.Policies.MaskUrl", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::SmokeFilter)
 bool FDTCctvMaskUrlTest::RunTest(const FString& Parameters)
@@ -246,7 +249,7 @@ bool FDTCctvFrameBurstTest::RunTest(const FString& Parameters)
 		Session.OutputFrame(Frame);
 	}
 	Session.FillStats(Stats);
-	TestEqual(TEXT("상한은 유지"), Stats.QueuedFrames, 8);
+	TestEqual(TEXT("프레임 수 상한 유지"), Stats.QueuedFrames, 8);
 	TestEqual(TEXT("상한 초과는 기존 이름으로 집계"), Stats.FramesSuperseded, int64(1));
 	// FFmpeg의 writable 복사는 처음 할당과 버퍼 패딩 크기가 다를 수 있다.
 	TestEqual(TEXT("대체 후8개 실제 버퍼 크기를 정확히 집계"), Stats.QueuedFrameBytes, int64(8) * static_cast<int64>(Frame->buf[0]->size));
@@ -298,6 +301,12 @@ bool FDTCctvLatencyPolicyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("새 프레임 없는 경우 마지막 표본을 숨기지 않음"), DTCctvChooseStaleFrameSkip(Only, 1.0), 0);
 	const double Boundary[] = { 0.040, 0.024 };
 	TestEqual(TEXT("40ms 경계 보존"), DTCctvChooseStaleFrameSkip(Boundary, 1.0), 0);
+	TestTrue(TEXT("144/60은 따라잡을 여유 있음"), DTCctvCanCatchUp(1.0 / 144.0, 60.0));
+	TestTrue(TEXT("60/30은 따라잡을 여유 있음"), DTCctvCanCatchUp(1.0 / 60.0, 30.0));
+	TestFalse(TEXT("60/60은 지속 대기를 해소할 여유 없음"), DTCctvCanCatchUp(1.0 / 60.0, 60.0));
+	TestFalse(TEXT("30/60은 건너뛰기가 필요"), DTCctvCanCatchUp(1.0 / 30.0, 60.0));
+	TestEqual(TEXT("따라잡는 중인 버스트는 보존"), DTCctvChooseStaleFrameSkip(Stalled, 0.2, true), 0);
+	TestEqual(TEXT("여유 추정이 틀려도 유예는 유한함"), DTCctvChooseStaleFrameSkip(Stalled, 0.75, true), 6);
 	return true;
 }
 
@@ -331,6 +340,97 @@ bool FDTCctvPreparedSizeTest::RunTest(const FString& Parameters)
 	Session.FillStats(Stats);
 	TestEqual(TEXT("소비 후 대기 버퍼 해제"), Stats.QueuedFrameBytes, int64(0));
 	av_frame_free(&Frame);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDTCctvFrameMemoryTest, "DTCctv.Policies.FrameMemoryCap", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::SmokeFilter)
+bool FDTCctvFrameMemoryTest::RunTest(const FString& Parameters)
+{
+	for (const FIntPoint Size : { FIntPoint(1920, 1080), FIntPoint(3840, 2160) })
+	{
+		FDTCctvSession Session{ FDTCctvSessionParams() };
+		AVFrame* Frame = av_frame_alloc();
+		if (!TestNotNull(TEXT("메모리 상한 시험 프레임"), Frame))
+		{
+			return false;
+		}
+		Frame->format = AV_PIX_FMT_YUV420P;
+		Frame->width = Size.X;
+		Frame->height = Size.Y;
+		if (av_frame_get_buffer(Frame, 32) < 0)
+		{
+			av_frame_free(&Frame);
+			return false;
+		}
+		const int32 ExpectedFrames = Size.X == 1920 ? 8 : 2;
+		for (int32 Index = 0; Index <= ExpectedFrames; ++Index)
+		{
+			Session.OutputFrame(Frame);
+		}
+		FDTCctvStreamStats Stats;
+		Session.FillStats(Stats);
+		TestEqual(TEXT("큰 프레임은 바이트 예산으로 먼저 제한"), Stats.QueuedFrames, ExpectedFrames);
+		TestTrue(TEXT("HD·4K 대기 버퍼24MiB 상한 유지"), Stats.QueuedFrameBytes <= 24 * 1024 * 1024);
+		TestEqual(TEXT("예산 초과도 기존 대체 집계에 포함"), Stats.FramesSuperseded, int64(1));
+		av_frame_free(&Frame);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDTCctvFrameBackpressureTest, "DTCctv.Policies.FrameBackpressure", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::SmokeFilter)
+bool FDTCctvFrameBackpressureTest::RunTest(const FString& Parameters)
+{
+	FDTCctvSession Session{ FDTCctvSessionParams() };
+	Session.TakeFrame(true);
+	TFuture<bool> Producer = Async(EAsyncExecution::Thread, [&Session]()
+	{
+		AVFrame* Frame = av_frame_alloc();
+		if (Frame == nullptr)
+		{
+			return false;
+		}
+		Frame->format = AV_PIX_FMT_YUV420P;
+		Frame->width = Frame->height = 16;
+		bool bOk = av_frame_get_buffer(Frame, 32) >= 0;
+		for (int32 Index = 0; bOk && Index < 16; ++Index)
+		{
+			bOk = av_frame_make_writable(Frame) >= 0;
+			if (bOk)
+			{
+				Frame->data[0][0] = static_cast<uint8>(Index);
+				Session.OutputFrame(Frame);
+			}
+		}
+		av_frame_free(&Frame);
+		return bOk;
+	});
+	const double Deadline = FPlatformTime::Seconds() + 3.0;
+	FDTCctvStreamStats Stats;
+	do
+	{
+		Session.FillStats(Stats);
+		FPlatformProcess::SleepNoStats(0.001f);
+	} while (Stats.QueuedFrames < 8 && FPlatformTime::Seconds() < Deadline);
+	TestEqual(TEXT("생산 버스트도 대기열은8장"), Stats.QueuedFrames, 8);
+	int32 Received = 0;
+	while (Received < 16 && FPlatformTime::Seconds() < Deadline)
+	{
+		if (FDTCctvVideoFramePtr Frame = Session.TakeFrame(true))
+		{
+			TestEqual(TEXT("생산 대기 후에도 FIFO 내용 보존"), Frame->GetPlanes().Data[0][0], static_cast<uint8>(Received++));
+		}
+		else
+		{
+			FPlatformProcess::SleepNoStats(0.001f);
+		}
+	}
+	Session.RequestStop();
+	const bool bProducerOk = Producer.Get();
+	Session.FillStats(Stats);
+	TestTrue(TEXT("생산 스레드 정상 종료"), bProducerOk);
+	TestEqual(TEXT("16개 버스트 모두 소비"), Received, 16);
+	TestEqual(TEXT("소비 여유가 있으면 버스트 대체 없음"), Stats.FramesSuperseded, int64(0));
+	TestEqual(TEXT("소비 뒤 대기 메모리 없음"), Stats.QueuedFrameBytes, int64(0));
 	return true;
 }
 

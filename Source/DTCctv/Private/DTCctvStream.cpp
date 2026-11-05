@@ -63,6 +63,7 @@ void UDTCctvStream::Open(const FDTCctvStreamConfig& InConfig)
 	Accumulated = FDTCctvStreamStats();
 	FramesDisplayed = 0;
 	StatsWindowStart = 0.0;
+	SmoothedTickSeconds = 0.0;
 	StatsWindowDecoded = 0;
 	StatsWindowDisplayed = 0;
 	DecodeFps = 0.f;
@@ -250,7 +251,13 @@ void UDTCctvStream::RenderLatestFrame()
 		return;
 	}
 
-	FDTCctvVideoFramePtr Frame = Session->TakeFrame();
+	double SourceFps = Session->GetNominalFps();
+	if (DecodeFps > 0.0)
+	{
+		SourceFps = SourceFps > 0.0 ? FMath::Min(SourceFps, static_cast<double>(DecodeFps)) : DecodeFps;
+	}
+	const bool bCanCatchUp = DTCctvCanCatchUp(SmoothedTickSeconds, SourceFps);
+	FDTCctvVideoFramePtr Frame = Session->TakeFrame(bCanCatchUp);
 	if (!Frame.IsValid())
 	{
 		return;
@@ -312,6 +319,8 @@ void UDTCctvStream::UpdateStats()
 
 void UDTCctvStream::Tick(float DeltaTime)
 {
+	const double TickSeconds = FMath::Clamp(static_cast<double>(DeltaTime), 1.0 / 240.0, 0.05);
+	SmoothedTickSeconds = SmoothedTickSeconds > 0.0 ? SmoothedTickSeconds * 0.95 + TickSeconds * 0.05 : TickSeconds;
 	if (!Session.IsValid())
 	{
 		return;

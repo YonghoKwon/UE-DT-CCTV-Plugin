@@ -17,6 +17,7 @@ namespace
 	constexpr double CloseDeadlineSeconds = 1.0;
 	/** 프레임이 몰려 도착해도 표시하도록 두는 대기열 길이. 표시가 못 따라가면 오래된 프레임부터 버린다. */
 	constexpr int32 MaxPendingFrames = 8;
+	constexpr int64 MaxPendingFrameBytes = 24 * 1024 * 1024;
 
 	std::atomic<int32> ActiveHwSessions{ 0 };
 
@@ -161,6 +162,7 @@ FDTCctvSession::FDTCctvSession(const FDTCctvSessionParams& InParams)
 	, Queue(InParams.MaxQueuedPackets)
 {
 	StopEvent = FPlatformProcess::GetSynchEventFromPool(true);
+	FrameSpaceEvent = FPlatformProcess::GetSynchEventFromPool(false);
 }
 
 FDTCctvSession::~FDTCctvSession()
@@ -170,6 +172,7 @@ FDTCctvSession::~FDTCctvSession()
 	ReaderThread.Reset();
 	ReaderWorker.Reset();
 	FPlatformProcess::ReturnSynchEventToPool(StopEvent);
+	FPlatformProcess::ReturnSynchEventToPool(FrameSpaceEvent);
 }
 
 void FDTCctvSession::Start()
@@ -189,15 +192,17 @@ void FDTCctvSession::RequestStop()
 {
 	bStop.store(true);
 	StopEvent->Trigger();
+	FrameSpaceEvent->Trigger();
 	Queue.Abort();
 }
 
-FDTCctvVideoFramePtr FDTCctvSession::TakeFrame()
+FDTCctvVideoFramePtr FDTCctvSession::TakeFrame(bool bCanCatchUp)
 {
 	FScopeLock ScopeLock(&Lock);
 	if (PendingFrames.IsEmpty())
 	{
 		FrameBacklogSinceSeconds = 0.0;
+		bConsumerCanCatchUp.store(bCanCatchUp);
 		return nullptr;
 	}
 	const double Now = NowSeconds();
@@ -205,12 +210,13 @@ FDTCctvVideoFramePtr FDTCctvSession::TakeFrame()
 	{
 		FrameBacklogSinceSeconds = Now;
 	}
+	bConsumerCanCatchUp.store(bCanCatchUp && (FrameBacklogSinceSeconds == 0.0 || Now - FrameBacklogSinceSeconds < 0.75));
 	TArray<double, TInlineAllocator<8>> Ages;
 	for (const FDTCctvVideoFramePtr& Pending : PendingFrames)
 	{
 		Ages.Add(FMath::Max(0.0, Now - Pending->GetDecodedSeconds()));
 	}
-	const int32 Skip = DTCctvChooseStaleFrameSkip(Ages, FrameBacklogSinceSeconds > 0.0 ? Now - FrameBacklogSinceSeconds : 0.0);
+	const int32 Skip = DTCctvChooseStaleFrameSkip(Ages, FrameBacklogSinceSeconds > 0.0 ? Now - FrameBacklogSinceSeconds : 0.0, bCanCatchUp);
 	if (Skip > 0)
 	{
 		for (int32 Index = 0; Index < Skip; ++Index)
@@ -223,6 +229,7 @@ FDTCctvVideoFramePtr FDTCctvSession::TakeFrame()
 	FDTCctvVideoFramePtr Frame = PendingFrames[0];
 	PendingFrameBytes -= Frame->GetBufferBytes();
 	PendingFrames.RemoveAt(0, 1, false);
+	FrameSpaceEvent->Trigger();
 	if (PendingFrames.IsEmpty())
 	{
 		FrameBacklogSinceSeconds = 0.0;
@@ -531,6 +538,7 @@ bool FDTCctvSession::TryOpenDecoder(const AVCodec* Codec, AVHWDeviceType HwType)
 	}
 
 	const AVRational FrameRate = av_guess_frame_rate(FormatContext, Stream, nullptr);
+	NominalFps.store(FrameRate.den != 0 ? FMath::Max(0.0, av_q2d(FrameRate)) : 0.0);
 	UE_LOG(LogDTCctv, Log, TEXT("%s: 코덱=%s 해상도=%dx%d FPS=%.2f 디코딩=%s"),
 		*DTCctvMaskUrlCredentials(Params.Url),
 		*Codecname,
@@ -777,20 +785,37 @@ void FDTCctvSession::OutputFrame(AVFrame* Decoded)
 	}
 
 	const FDTCctvVideoFramePtr Frame = MakeShared<FDTCctvVideoFrame, ESPMode::ThreadSafe>(Output, FrameSourceSize, DecodedSeconds);
+	const double WaitStartedSeconds = NowSeconds();
+	for (;;)
 	{
-		FScopeLock ScopeLock(&Lock);
-		SourceSize = FrameSourceSize;
-		PreparedFrameSize = Frame->GetSize();
-		if (PendingFrames.Num() >= MaxPendingFrames)
+		if (bStop.load())
 		{
-			FramesSuperseded.fetch_add(1);
-			PendingFrameBytes -= PendingFrames[0]->GetBufferBytes();
-			PendingFrames.RemoveAt(0, 1, false);
+			return;
 		}
-		PendingFrames.Add(Frame);
-		PendingFrameBytes += Frame->GetBufferBytes();
-		PeakPendingFrameBytes = FMath::Max(PeakPendingFrameBytes, PendingFrameBytes);
-		PeakQueuedFrames = FMath::Max(PeakQueuedFrames, PendingFrames.Num());
+		{
+			FScopeLock ScopeLock(&Lock);
+			const int64 FrameBytes = Frame->GetBufferBytes();
+			const int64 ByteLimit = FMath::Max(MaxPendingFrameBytes, FrameBytes);
+			const bool bFull = PendingFrames.Num() >= MaxPendingFrames || PendingFrameBytes + FrameBytes > ByteLimit;
+			if (!bFull || !bConsumerCanCatchUp.load() || NowSeconds() - WaitStartedSeconds >= 0.75)
+			{
+				while (!PendingFrames.IsEmpty() && (PendingFrames.Num() >= MaxPendingFrames || PendingFrameBytes + FrameBytes > ByteLimit))
+				{
+					FramesSuperseded.fetch_add(1);
+					PendingFrameBytes -= PendingFrames[0]->GetBufferBytes();
+					PendingFrames.RemoveAt(0, 1, false);
+				}
+				SourceSize = FrameSourceSize;
+				PreparedFrameSize = Frame->GetSize();
+				PendingFrames.Add(Frame);
+				PendingFrameBytes += FrameBytes;
+				PeakPendingFrameBytes = FMath::Max(PeakPendingFrameBytes, PendingFrameBytes);
+				PeakQueuedFrames = FMath::Max(PeakQueuedFrames, PendingFrames.Num());
+				break;
+			}
+		}
+		// 소비 여유가 있는 짧은 버스트만 디코딩 스레드에서 기다린다. 게임 스레드는 기다리지 않는다.
+		FrameSpaceEvent->Wait(5);
 	}
 
 	const double Now = NowSeconds();
