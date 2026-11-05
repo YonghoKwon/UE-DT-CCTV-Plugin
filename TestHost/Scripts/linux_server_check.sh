@@ -10,6 +10,10 @@ if [[ ${3:-} == --software-only ]]; then scope=software; fi
 helper=$(cd -- "$(dirname -- "$0")" && pwd)/linux_server_check.py
 exe=$package/DTCctvTestHost/Binaries/Linux/DTCctvTestHost
 [[ -x $exe && -f $helper ]] || { printf '실행 파일 또는 점검 도우미 없음\n' >&2; exit 2; }
+python_bin=$(command -v python3 || true)
+if [[ -z $python_bin && -x /usr/libexec/platform-python ]]; then python_bin=/usr/libexec/platform-python; fi
+[[ -n $python_bin ]] || { printf 'FAIL | Python3 실행 파일 없음\n' >&2; exit 2; }
+export PYTHONIOENCODING=utf-8
 out=$(pwd)/cctv-linux-check-$(date +%Y%m%d-%H%M%S)-$$
 mkdir -m 700 -- "$out" || exit 2
 runtime=$(mktemp -d "$out/.runtime.XXXXXX") || exit 2
@@ -31,7 +35,7 @@ trap cleanup EXIT INT TERM
 ulimit -c 0
 mkfifo "$runtime/output.fifo"
 export DTCCTV_CHECK_URL=$url
-python3 "$helper" redact < "$runtime/output.fifo" > "$out/game.log" &
+"$python_bin" "$helper" redact < "$runtime/output.fifo" > "$out/game.log" &
 filter_pid=$!
 args=(-RenderOffScreen -vulkan -ForceRes -ResX=1920 -ResY=1080 -unattended -nosound -nosplash
 	-stdout -FullStdOutLogOutput -abslog=/dev/null -NoCrashReports -CrashForUAT
@@ -59,4 +63,4 @@ game_pid=
 wait "$filter_pid"
 filter_pid=
 unset DTCCTV_CHECK_URL
-python3 "$helper" analyze "$out" "$scope" "$code" "$timed_out"
+"$python_bin" "$helper" analyze "$out" "$scope" "$code" "$timed_out"
