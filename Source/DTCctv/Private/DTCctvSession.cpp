@@ -13,8 +13,6 @@
 
 namespace
 {
-	/** 첫 키프레임을 기다리는 동안 허용하는 최소 시간. 키프레임 간격이 긴 카메라를 고려한다. */
-	constexpr double FirstFrameWatchdogSeconds = 10.0;
 	/** 닫을 때 TEARDOWN 응답을 기다리는 최대 시간. */
 	constexpr double CloseDeadlineSeconds = 1.0;
 	/** 프레임이 몰려 도착해도 표시하도록 두는 대기열 길이. 표시가 못 따라가면 오래된 프레임부터 버린다. */
@@ -525,11 +523,31 @@ void FDTCctvSession::ReadLoop()
 {
 	const FString SafeUrl = DTCctvMaskUrlCredentials(Params.Url);
 	const double WatchdogStart = NowSeconds();
+	double FirstKeyPacketSeconds = 0.0;
 	const int64 DroppedAtStart = Queue.GetDroppedPackets();
 	AVPacket* Packet = av_packet_alloc();
 
 	while (Packet != nullptr && !bStop.load())
 	{
+		const double LastFrame = LastFrameSeconds.load();
+		const EDTCctvOutputWatchdogAction WatchdogAction = DTCctvEvaluateOutputWatchdog(
+			NowSeconds(), WatchdogStart, FirstKeyPacketSeconds, LastFrame, Params.ReadTimeoutSeconds, HwPixelFormat >= 0);
+		if (WatchdogAction != EDTCctvOutputWatchdogAction::None)
+		{
+			if (FirstKeyPacketSeconds == 0.0 && LastFrame == 0.0)
+			{
+				UE_LOG(LogDTCctv, Warning, TEXT("%s: 30초 안에 키프레임을 받지 못해 디코딩 방식을 유지하고 다시 연결합니다."), *SafeUrl);
+			}
+			else
+			{
+				UE_LOG(LogDTCctv, Warning, TEXT("%s: 키프레임 수신 후 디코딩 출력 감시 기한을 넘어 다시 연결합니다."), *SafeUrl);
+			}
+			if (WatchdogAction == EDTCctvOutputWatchdogAction::RetrySoftware)
+			{
+				bForceSoftware = true;
+			}
+			break;
+		}
 		ExtendDeadline(Params.ReadTimeoutSeconds);
 		const int32 ReadResult = av_read_frame(FormatContext, Packet);
 		if (ReadResult == AVERROR(EAGAIN))
@@ -548,6 +566,10 @@ void FDTCctvSession::ReadLoop()
 
 		if (Packet->stream_index == VideoStreamIndex)
 		{
+			if (FirstKeyPacketSeconds == 0.0 && (Packet->flags & AV_PKT_FLAG_KEY) != 0)
+			{
+				FirstKeyPacketSeconds = NowSeconds();
+			}
 			PacketsReceived.fetch_add(1);
 			Queue.Push(Packet);
 		}
@@ -555,29 +577,19 @@ void FDTCctvSession::ReadLoop()
 
 		if (bHwFailed.load())
 		{
-			UE_LOG(LogDTCctv, Warning, TEXT("%s: 하드웨어 디코딩 오류로 소프트웨어 디코딩으로 전환합니다."), *SafeUrl);
-			bForceSoftware = true;
+			UE_LOG(LogDTCctv, Warning, TEXT("%s: 하드웨어 디코딩 오류로 다시 연결합니다. 키프레임 수신=%d"), *SafeUrl, FirstKeyPacketSeconds > 0.0 ? 1 : 0);
+			if (FirstKeyPacketSeconds > 0.0)
+			{
+				bForceSoftware = true;
+			}
 			break;
 		}
 
 		// 하드웨어 디코딩이 입력을 못 따라가면 이 채널은 소프트웨어로 옮긴다.
 		if (HwPixelFormat >= 0 && Queue.GetDroppedPackets() > DroppedAtStart)
 		{
-			UE_LOG(LogDTCctv, Warning, TEXT("%s: 하드웨어 디코딩 과부하로 소프트웨어 디코딩으로 전환합니다."), *SafeUrl);
-			bForceSoftware = true;
-			break;
-		}
-
-		// 패킷은 오는데 프레임이 나오지 않으면 수신 기한으로는 감지할 수 없어 따로 확인한다.
-		const double LastFrame = LastFrameSeconds.load();
-		const double Reference = LastFrame > 0.0 ? LastFrame : WatchdogStart;
-		const double Limit = LastFrame > 0.0
-			? static_cast<double>(Params.ReadTimeoutSeconds)
-			: FMath::Max(static_cast<double>(Params.ReadTimeoutSeconds), FirstFrameWatchdogSeconds);
-		if (NowSeconds() - Reference > Limit)
-		{
-			UE_LOG(LogDTCctv, Warning, TEXT("%s: %.1f초 동안 디코딩 결과가 없어 다시 연결합니다."), *SafeUrl, Limit);
-			if (HwPixelFormat >= 0)
+			UE_LOG(LogDTCctv, Warning, TEXT("%s: 하드웨어 디코딩 과부하로 다시 연결합니다. 키프레임 수신=%d"), *SafeUrl, FirstKeyPacketSeconds > 0.0 ? 1 : 0);
+			if (FirstKeyPacketSeconds > 0.0)
 			{
 				bForceSoftware = true;
 			}

@@ -146,4 +146,28 @@ bool FDTCctvFrameMetadataTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDTCctvOutputWatchdogTest, "DTCctv.Policies.OutputWatchdog", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::SmokeFilter)
+bool FDTCctvOutputWatchdogTest::RunTest(const FString& Parameters)
+{
+	using FAction = EDTCctvOutputWatchdogAction;
+	for (const bool bHardware : { false, true })
+	{
+		TestTrue(TEXT("키프레임 전 10초에는 재연결하지 않음"), DTCctvEvaluateOutputWatchdog(110.0, 100.0, 0.0, 0.0, 5.0, bHardware) == FAction::None);
+		TestTrue(TEXT("키프레임 전 30초 직전 대기"), DTCctvEvaluateOutputWatchdog(129.999, 100.0, 0.0, 0.0, 5.0, bHardware) == FAction::None);
+		TestTrue(TEXT("키프레임 전 30초에는 HW도 일반 재연결"), DTCctvEvaluateOutputWatchdog(130.0, 100.0, 0.0, 0.0, 5.0, bHardware) == FAction::Reconnect);
+		TestTrue(TEXT("키프레임 없이 오래 지나도 SW 강제 없음"), DTCctvEvaluateOutputWatchdog(160.0, 100.0, 0.0, 0.0, 5.0, bHardware) == FAction::Reconnect);
+	}
+	TestTrue(TEXT("늦은 키프레임 도착 뒤 새로 10초 대기"), DTCctvEvaluateOutputWatchdog(138.999, 100.0, 129.0, 0.0, 5.0, true) == FAction::None);
+	TestTrue(TEXT("키프레임 뒤 10초 무출력이면 HW 폴백"), DTCctvEvaluateOutputWatchdog(139.0, 100.0, 129.0, 0.0, 5.0, true) == FAction::RetrySoftware);
+	TestTrue(TEXT("SW 무출력은 일반 재연결"), DTCctvEvaluateOutputWatchdog(139.0, 100.0, 129.0, 0.0, 5.0, false) == FAction::Reconnect);
+	TestTrue(TEXT("ReadTimeout이 10초보다 길면 그만큼 대기"), DTCctvEvaluateOutputWatchdog(148.999, 100.0, 129.0, 0.0, 20.0, true) == FAction::None);
+	TestTrue(TEXT("긴 ReadTimeout 경계에서 HW 폴백"), DTCctvEvaluateOutputWatchdog(149.0, 100.0, 129.0, 0.0, 20.0, true) == FAction::RetrySoftware);
+	TestTrue(TEXT("재생 뒤에는 마지막 출력부터 읽기 기한 적용"), DTCctvEvaluateOutputWatchdog(154.999, 100.0, 129.0, 150.0, 5.0, true) == FAction::None);
+	TestTrue(TEXT("재생 뒤 출력 중단은 HW 폴백"), DTCctvEvaluateOutputWatchdog(155.0, 100.0, 129.0, 150.0, 5.0, true) == FAction::RetrySoftware);
+	TestTrue(TEXT("재생 뒤 SW 출력 중단은 일반 재연결"), DTCctvEvaluateOutputWatchdog(155.0, 100.0, 129.0, 150.0, 5.0, false) == FAction::Reconnect);
+	TestTrue(TEXT("읽기 기한이 길어도 키프레임 대기는 30초"), DTCctvEvaluateOutputWatchdog(130.0, 100.0, 0.0, 0.0, 60.0, true) == FAction::Reconnect);
+	TestTrue(TEXT("키프레임 표식 전에는 출력 이력이 있어도 SW 강제 없음"), DTCctvEvaluateOutputWatchdog(155.0, 100.0, 0.0, 150.0, 5.0, true) == FAction::Reconnect);
+	return true;
+}
+
 #endif

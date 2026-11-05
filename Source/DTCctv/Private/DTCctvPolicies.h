@@ -8,6 +8,17 @@ FString DTCctvMaskUrlCredentials(const FString& Text);
 /** 표시 크기에 맞는 렌더 타깃 크기. 비율을 유지하고 원본보다 커지지 않는다. */
 FIntPoint DTCctvComputeOutputSize(FIntPoint SourceSize, FVector2D ViewSize);
 
+enum class EDTCctvOutputWatchdogAction : uint8
+{
+	None,
+	Reconnect,
+	RetrySoftware
+};
+
+/** 키프레임 전에는 30초 대기 후 일반 재연결만 하고, 이후에만 디코더 출력을 감시한다. */
+EDTCctvOutputWatchdogAction DTCctvEvaluateOutputWatchdog(double NowSeconds, double ReadStartedSeconds,
+	double FirstKeyPacketSeconds, double LastFrameSeconds, double ReadTimeoutSeconds, bool bHardware);
+
 /** 재연결 대기 시간 계산. 안정적으로 재생되면 처음 값으로 돌아간다. */
 class FDTCctvBackoff
 {

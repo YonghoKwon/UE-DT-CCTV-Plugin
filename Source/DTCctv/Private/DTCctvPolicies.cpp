@@ -59,6 +59,30 @@ FIntPoint DTCctvComputeOutputSize(FIntPoint SourceSize, FVector2D ViewSize)
 		FMath::Max(2, FMath::CeilToInt(SourceSize.Y * Scale)));
 }
 
+EDTCctvOutputWatchdogAction DTCctvEvaluateOutputWatchdog(double NowSeconds, double ReadStartedSeconds,
+	double FirstKeyPacketSeconds, double LastFrameSeconds, double ReadTimeoutSeconds, bool bHardware)
+{
+	double ReferenceSeconds = ReadStartedSeconds;
+	double TimeoutSeconds = 30.0;
+	if (LastFrameSeconds > 0.0)
+	{
+		ReferenceSeconds = LastFrameSeconds;
+		TimeoutSeconds = ReadTimeoutSeconds;
+	}
+	else if (FirstKeyPacketSeconds > 0.0)
+	{
+		ReferenceSeconds = FirstKeyPacketSeconds;
+		TimeoutSeconds = FMath::Max(ReadTimeoutSeconds, 10.0);
+	}
+	if (NowSeconds - ReferenceSeconds < TimeoutSeconds)
+	{
+		return EDTCctvOutputWatchdogAction::None;
+	}
+	return bHardware && FirstKeyPacketSeconds > 0.0
+		? EDTCctvOutputWatchdogAction::RetrySoftware
+		: EDTCctvOutputWatchdogAction::Reconnect;
+}
+
 FDTCctvBackoff::FDTCctvBackoff(float InMinSeconds, float InMaxSeconds)
 	: MinSeconds(InMinSeconds)
 	, MaxSeconds(FMath::Max(InMinSeconds, InMaxSeconds))
