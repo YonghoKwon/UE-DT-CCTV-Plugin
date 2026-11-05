@@ -55,6 +55,9 @@ def apply_approved_thread_policy(summary, module_analysis):
                   only_os_module_counts_vary=only_os_varies, varying_modules=varying,
                   module_count_ranges=ranges, comparisons=comparisons)
     summary['old_raw_resource_criteria'] = {k: dict(summary['metrics'][k]) for k in ('handles', 'threads')}
+    for key in ('handles', 'threads'):
+        summary['metrics'][key]['status'] = comparisons[key]['status']
+        summary['metrics'][key]['criterion'] = '승인된 11~40회와 마지막30회 최대 비교. 원시 OLS 판정은 old_raw_resource_criteria에 보존.'
     summary['approved_thread_criteria'] = policy
     summary['failures'] = [s for s in summary['failures'] if s not in ('handles 증가 기준 미달', 'threads 증가 기준 미달')]
     if policy['status'] != 'PASS':

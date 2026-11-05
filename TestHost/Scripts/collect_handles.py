@@ -18,6 +18,7 @@ def main():
     parser.add_argument('owner', type=Path)
     parser.add_argument('output', type=Path)
     parser.add_argument('--interval', type=float, default=1)
+    parser.add_argument('--max-samples', type=int, default=0)
     args = parser.parse_args()
     owner = json.loads(args.owner.read_text(encoding='utf-8-sig'))
     process = psutil.Process(owner['pid'])
@@ -38,12 +39,33 @@ def main():
     class UnicodeString(c.Structure):
         _fields_ = [('length', w.USHORT), ('maximum', w.USHORT), ('buffer', c.c_void_p)]
 
+    class ObjectTypeInfo(c.Structure):
+        _fields_ = [('name', UnicodeString), ('counters', w.ULONG*12), ('invalid_attributes', w.ULONG),
+                    ('generic_mapping', w.ULONG*4), ('valid_access', w.ULONG),
+                    ('security', c.c_ubyte), ('maintain', c.c_ubyte), ('index', c.c_ubyte), ('reserved', c.c_ubyte),
+                    ('pool_type', w.ULONG), ('paged_charge', w.ULONG), ('nonpaged_charge', w.ULONG)]
+
     dtype = np.dtype([('object', '<u8'), ('pid', '<u8'), ('handle', '<u8'), ('access', '<u4'),
                       ('trace', '<u2'), ('type', '<u2'), ('attributes', '<u4'), ('reserved', '<u4')])
     target = kernel.OpenProcess(0x1040, False, process.pid)
     if not target:
         raise c.WinError(c.get_last_error())
     names, previous = {}, {}
+    collected = 0
+    # EtwRegistration 같은 종류는 개별 핸들 복제가 거부될 수 있어 시스템 종류 표를 먼저 읽는다.
+    type_buffer, type_needed = c.create_string_buffer(65536), w.ULONG()
+    if nt.NtQueryObject(None, 3, type_buffer, len(type_buffer), c.byref(type_needed)) == 0:
+        type_count = w.ULONG.from_buffer(type_buffer).value
+        address = c.addressof(type_buffer)+8
+        limit = c.addressof(type_buffer)+len(type_buffer)
+        for _ in range(type_count):
+            if address+c.sizeof(ObjectTypeInfo) > limit:
+                raise RuntimeError('시스템 객체 종류 표 범위 오류')
+            info = ObjectTypeInfo.from_address(address)
+            if not info.name.buffer or not (address <= info.name.buffer <= limit-info.name.maximum):
+                raise RuntimeError('시스템 객체 종류 이름 범위 오류')
+            names[info.index] = c.wstring_at(info.name.buffer, info.name.length//2)
+            address = (info.name.buffer+info.name.maximum+7) & ~7
     size, next_sample = 8*1024*1024, time.monotonic()
     try:
         with args.output.open('a', encoding='utf-8', buffering=1) as stream:
@@ -85,6 +107,9 @@ def main():
                               removed=[previous[k] for k in previous.keys()-current.keys()], handles=list(current.values()))
                 stream.write(json.dumps(sample, ensure_ascii=False)+'\n')
                 previous = current
+                collected += 1
+                if args.max_samples and collected >= args.max_samples:
+                    break
                 next_sample += max(.25, args.interval)
     except psutil.NoSuchProcess:
         pass
