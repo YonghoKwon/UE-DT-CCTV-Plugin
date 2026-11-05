@@ -195,4 +195,56 @@ bool FDTCctvHwFallbackTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDTCctvFrameBurstTest, "DTCctv.Policies.FrameBurstBuffer", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::SmokeFilter)
+bool FDTCctvFrameBurstTest::RunTest(const FString& Parameters)
+{
+	FDTCctvSession Session{ FDTCctvSessionParams() };
+	AVFrame* Frame = av_frame_alloc();
+	if (!TestNotNull(TEXT("프레임 할당"), Frame))
+	{
+		return false;
+	}
+	Frame->format = AV_PIX_FMT_YUV420P;
+	Frame->width = 16;
+	Frame->height = 16;
+	if (av_frame_get_buffer(Frame, 32) < 0)
+	{
+		av_frame_free(&Frame);
+		return false;
+	}
+	for (int32 Index = 0; Index < 8; ++Index)
+	{
+		if (av_frame_make_writable(Frame) < 0)
+		{
+			av_frame_free(&Frame);
+			return false;
+		}
+		Frame->data[0][0] = static_cast<uint8>(Index);
+		Session.OutputFrame(Frame);
+	}
+	FDTCctvStreamStats Stats;
+	Session.FillStats(Stats);
+	TestEqual(TEXT("짧은 지연의 8프레임을 순서대로 보존"), Stats.QueuedFrames, 8);
+	TestEqual(TEXT("버스트 대체 없음"), Stats.FramesSuperseded, int64(0));
+	for (int32 Index = 0; Index < 8; ++Index)
+	{
+		FDTCctvVideoFramePtr Output = Session.TakeFrame();
+		if (!TestTrue(TEXT("대기 프레임 존재"), Output.IsValid()))
+		{
+			av_frame_free(&Frame);
+			return false;
+		}
+		TestEqual(TEXT("FIFO 프레임 내용"), Output->GetPlanes().Data[0][0], static_cast<uint8>(Index));
+	}
+	for (int32 Index = 0; Index < 9; ++Index)
+	{
+		Session.OutputFrame(Frame);
+	}
+	Session.FillStats(Stats);
+	TestEqual(TEXT("상한은 유지"), Stats.QueuedFrames, 8);
+	TestEqual(TEXT("상한 초과는 기존 이름으로 집계"), Stats.FramesSuperseded, int64(1));
+	av_frame_free(&Frame);
+	return true;
+}
+
 #endif

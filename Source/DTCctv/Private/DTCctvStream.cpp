@@ -49,6 +49,7 @@ namespace
 		Total.PacketsDropped += Stats.PacketsDropped;
 		Total.DecodeErrors += Stats.DecodeErrors;
 		Total.Reconnects += Stats.Reconnects;
+		Total.PeakQueuedFrames = FMath::Max(Total.PeakQueuedFrames, Stats.PeakQueuedFrames);
 	}
 }
 
@@ -346,6 +347,8 @@ FDTCctvStreamStats UDTCctvStream::GetStats() const
 	Stats.PacketsDropped += Accumulated.PacketsDropped;
 	Stats.DecodeErrors += Accumulated.DecodeErrors;
 	Stats.Reconnects += Accumulated.Reconnects;
+	Stats.PeakQueuedFrames = FMath::Max(Stats.PeakQueuedFrames, Accumulated.PeakQueuedFrames);
+	Stats.RenderCommandsInFlight = RenderInFlight.IsValid() ? RenderInFlight->load() : 0;
 	Stats.FramesDisplayed = FramesDisplayed;
 	Stats.OutputSize = OutputSize;
 	Stats.DecodeFps = DecodeFps;

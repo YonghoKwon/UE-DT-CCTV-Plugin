@@ -32,6 +32,7 @@ namespace
 		Total.PacketsDropped += Stats.PacketsDropped;
 		Total.DecodeErrors += Stats.DecodeErrors;
 		Total.Reconnects += Stats.Reconnects;
+		Total.PeakQueuedFrames = FMath::Max(Total.PeakQueuedFrames, Stats.PeakQueuedFrames);
 	}
 }
 
@@ -130,9 +131,9 @@ void UDTCctvHarnessSubsystem::BuildViews()
 	if (!CsvPath.IsEmpty())
 	{
 		FFileHelper::SaveStringToFile(
-			TEXT("t,frame_fps,max_frame_ms,used_mb,playing,decode_fps_avg,display_fps_avg,decoded,displayed,superseded,dropped,errors,reconnects,queued,output_w,decoder,codec,src_w,src_h\n"),
+			TEXT("t,frame_fps,max_frame_ms,used_mb,playing,decode_fps_avg,display_fps_avg,decoded,displayed,superseded,dropped,errors,reconnects,queued,output_w,decoder,codec,src_w,src_h,queued_frames,peak_queued_frames,render_in_flight\n"),
 			*CsvPath);
-		FFileHelper::SaveStringToFile(TEXT("t,channel,state,decode_fps,display_fps,decoded,displayed,dropped,errors,reconnects,output_w,output_h,src_w,src_h,view_w,view_h,cycle,closed,decoder,codec\n"), *ChannelCsvPath);
+		FFileHelper::SaveStringToFile(TEXT("t,channel,state,decode_fps,display_fps,decoded,displayed,dropped,errors,reconnects,output_w,output_h,src_w,src_h,view_w,view_h,cycle,closed,decoder,codec,queued_frames,peak_queued_frames,render_in_flight\n"), *ChannelCsvPath);
 		FFileHelper::SaveStringToFile(TEXT("t,event,cycle\n"), *EventCsvPath);
 	}
 	WriteEvent(TEXT("start"), 0.0);
@@ -268,6 +269,7 @@ void UDTCctvHarnessSubsystem::WriteSample(float DeltaTime)
 	int32 Reconnects = 0, Queued = 0, OutputWidth = 0, SourceW = 0, SourceH = 0;
 	FString Decoder, Codec;
 	FString ChannelLines;
+	int32 QueuedFrames = 0, PeakFrames = 0, RenderCommands = 0;
 	for (int32 Index = 0; Index < Views.Num(); ++Index)
 	{
 		const UDTCctvView* View = Views[Index];
@@ -277,11 +279,15 @@ void UDTCctvHarnessSubsystem::WriteSample(float DeltaTime)
 			continue;
 		}
 		const FDTCctvStreamStats Stats = GetLifetimeStats(Index);
-		ChannelLines += FString::Printf(TEXT("%.3f,%d,%d,%.3f,%.3f,%lld,%lld,%lld,%lld,%d,%d,%d,%d,%d,%.1f,%.1f,%d,%d,%s,%s\n"),
+		ChannelLines += FString::Printf(TEXT("%.3f,%d,%d,%.3f,%.3f,%lld,%lld,%lld,%lld,%d,%d,%d,%d,%d,%.1f,%.1f,%d,%d,%s,%s,%d,%d,%d\n"),
 			Now - StartSeconds, Index, static_cast<int32>(Stats.State), Stats.DecodeFps, Stats.DisplayFps,
 			Stats.FramesDecoded, Stats.FramesDisplayed, Stats.PacketsDropped, Stats.DecodeErrors, Stats.Reconnects,
 			Stats.OutputSize.X, Stats.OutputSize.Y, Stats.SourceSize.X, Stats.SourceSize.Y,
-			RequestedSizes[Index].X, RequestedSizes[Index].Y, CompletedCycles, bCycleClosed ? 1 : 0, *Stats.DecoderName, *Stats.CodecName);
+			RequestedSizes[Index].X, RequestedSizes[Index].Y, CompletedCycles, bCycleClosed ? 1 : 0, *Stats.DecoderName, *Stats.CodecName,
+			Stats.QueuedFrames, Stats.PeakQueuedFrames, Stats.RenderCommandsInFlight);
+		QueuedFrames += Stats.QueuedFrames;
+		PeakFrames = FMath::Max(PeakFrames, Stats.PeakQueuedFrames);
+		RenderCommands += Stats.RenderCommandsInFlight;
 		Playing += Stats.State == EDTCctvState::Playing ? 1 : 0;
 		DecodeFps += Stats.DecodeFps;
 		DisplayFps += Stats.DisplayFps;
@@ -301,10 +307,10 @@ void UDTCctvHarnessSubsystem::WriteSample(float DeltaTime)
 
 	const int32 ViewCount = FMath::Max(1, Views.Num());
 	const uint64 UsedMb = FPlatformMemory::GetStats().UsedPhysical / (1024 * 1024);
-	const FString Line = FString::Printf(TEXT("%.1f,%.1f,%.1f,%llu,%d,%.1f,%.1f,%lld,%lld,%lld,%lld,%lld,%d,%d,%d,%s,%s,%d,%d\n"),
+	const FString Line = FString::Printf(TEXT("%.1f,%.1f,%.1f,%llu,%d,%.1f,%.1f,%lld,%lld,%lld,%lld,%lld,%d,%d,%d,%s,%s,%d,%d,%d,%d,%d\n"),
 		Now - StartSeconds, FramesThisWindow / Window, MaxFrameMs, UsedMb, Playing,
 		DecodeFps / ViewCount, DisplayFps / ViewCount, Decoded, Displayed, Superseded, Dropped, Errors, Reconnects, Queued,
-		OutputWidth, *Decoder, *Codec, SourceW, SourceH);
+		OutputWidth, *Decoder, *Codec, SourceW, SourceH, QueuedFrames, PeakFrames, RenderCommands);
 	UE_LOG(LogDTCctvHarness, Log, TEXT("%s"), *Line.TrimEnd());
 	if (!CsvPath.IsEmpty())
 	{

@@ -61,6 +61,7 @@ public:
 private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FDTCctvHwFallbackTest;
+	friend class FDTCctvFrameBurstTest;
 #endif
 	class FWorker;
 
@@ -113,7 +114,8 @@ private:
 	mutable FCriticalSection Lock;
 	FIntPoint SourceSize = FIntPoint::ZeroValue;
 	FIntPoint DesiredOutputSize = FIntPoint::ZeroValue;
-	TArray<FDTCctvVideoFramePtr, TInlineAllocator<4>> PendingFrames;
+	TArray<FDTCctvVideoFramePtr, TInlineAllocator<8>> PendingFrames;
+	int32 PeakQueuedFrames = 0;
 	FString CodecName;
 	FString DecoderName;
 };

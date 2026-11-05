@@ -16,7 +16,7 @@ namespace
 	/** 닫을 때 TEARDOWN 응답을 기다리는 최대 시간. */
 	constexpr double CloseDeadlineSeconds = 1.0;
 	/** 프레임이 몰려 도착해도 표시하도록 두는 대기열 길이. 표시가 못 따라가면 오래된 프레임부터 버린다. */
-	constexpr int32 MaxPendingFrames = 3;
+	constexpr int32 MaxPendingFrames = 8;
 
 	std::atomic<int32> ActiveHwSessions{ 0 };
 
@@ -229,6 +229,8 @@ void FDTCctvSession::FillStats(FDTCctvStreamStats& Stats) const
 
 	FScopeLock ScopeLock(&Lock);
 	Stats.SourceSize = SourceSize;
+	Stats.QueuedFrames = PendingFrames.Num();
+	Stats.PeakQueuedFrames = PeakQueuedFrames;
 	Stats.CodecName = CodecName;
 	Stats.DecoderName = DecoderName;
 }
@@ -739,6 +741,7 @@ void FDTCctvSession::OutputFrame(AVFrame* Decoded)
 			PendingFrames.RemoveAt(0, 1, false);
 		}
 		PendingFrames.Add(Frame);
+		PeakQueuedFrames = FMath::Max(PeakQueuedFrames, PendingFrames.Num());
 	}
 
 	const double Now = NowSeconds();
