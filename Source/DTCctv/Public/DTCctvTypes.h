@@ -128,6 +128,17 @@ struct FDTCctvStreamStats
 	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
 	int32 RenderCommandsInFlight = 0;
 
+	/** 대기 프레임이 참조하는 AVBuffer 크기 합. 공유 참조는 보수적으로 중복 계산한다. */
+	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
+	int64 QueuedFrameBytes = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
+	int64 PeakQueuedFrameBytes = 0;
+
+	/** CPU 변환까지 마친 최근 프레임의 크기. 원본·렌더 타깃 크기와 구분한다. */
+	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
+	FIntPoint PreparedFrameSize = FIntPoint::ZeroValue;
+
 	/** 디코딩 완료부터 렌더 명령 등록까지의 시간. 네트워크 지연과 GPU 완료 시간은 제외한다. */
 	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
 	int64 FrameAgeSamples = 0;

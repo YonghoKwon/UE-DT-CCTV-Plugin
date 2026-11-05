@@ -213,10 +213,15 @@ FDTCctvVideoFramePtr FDTCctvSession::TakeFrame()
 	const int32 Skip = DTCctvChooseStaleFrameSkip(Ages, FrameBacklogSinceSeconds > 0.0 ? Now - FrameBacklogSinceSeconds : 0.0);
 	if (Skip > 0)
 	{
+		for (int32 Index = 0; Index < Skip; ++Index)
+		{
+			PendingFrameBytes -= PendingFrames[Index]->GetBufferBytes();
+		}
 		PendingFrames.RemoveAt(0, Skip, false);
 		FramesSuperseded.fetch_add(Skip);
 	}
 	FDTCctvVideoFramePtr Frame = PendingFrames[0];
+	PendingFrameBytes -= Frame->GetBufferBytes();
 	PendingFrames.RemoveAt(0, 1, false);
 	if (PendingFrames.IsEmpty())
 	{
@@ -252,6 +257,9 @@ void FDTCctvSession::FillStats(FDTCctvStreamStats& Stats) const
 	Stats.SourceSize = SourceSize;
 	Stats.QueuedFrames = PendingFrames.Num();
 	Stats.PeakQueuedFrames = PeakQueuedFrames;
+	Stats.QueuedFrameBytes = PendingFrameBytes;
+	Stats.PeakQueuedFrameBytes = PeakPendingFrameBytes;
+	Stats.PreparedFrameSize = PreparedFrameSize;
 	Stats.CodecName = CodecName;
 	Stats.DecoderName = DecoderName;
 	FrameAge.FillStats(Stats);
@@ -729,6 +737,10 @@ void FDTCctvSession::OutputFrame(AVFrame* Decoded)
 		FScopeLock ScopeLock(&Lock);
 		WantedSize = DesiredOutputSize;
 	}
+	if (WantedSize.X > 0 && WantedSize.Y > 0)
+	{
+		WantedSize = DTCctvComputeOutputSize(FrameSourceSize, FVector2D(WantedSize));
+	}
 	const bool bDownscale = WantedSize.X > 0 && WantedSize.Y > 0 && WantedSize.X <= Output->width / 2 && WantedSize.Y <= Output->height / 2;
 
 	if (bDownscale || !IsDirectlyRenderable(Output->format))
@@ -766,12 +778,16 @@ void FDTCctvSession::OutputFrame(AVFrame* Decoded)
 	{
 		FScopeLock ScopeLock(&Lock);
 		SourceSize = FrameSourceSize;
+		PreparedFrameSize = Frame->GetSize();
 		if (PendingFrames.Num() >= MaxPendingFrames)
 		{
 			FramesSuperseded.fetch_add(1);
+			PendingFrameBytes -= PendingFrames[0]->GetBufferBytes();
 			PendingFrames.RemoveAt(0, 1, false);
 		}
 		PendingFrames.Add(Frame);
+		PendingFrameBytes += Frame->GetBufferBytes();
+		PeakPendingFrameBytes = FMath::Max(PeakPendingFrameBytes, PendingFrameBytes);
 		PeakQueuedFrames = FMath::Max(PeakQueuedFrames, PendingFrames.Num());
 	}
 

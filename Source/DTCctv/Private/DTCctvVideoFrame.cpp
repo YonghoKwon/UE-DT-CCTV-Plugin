@@ -20,6 +20,20 @@ FIntPoint FDTCctvVideoFrame::GetSize() const
 	return FIntPoint(Frame->width, Frame->height);
 }
 
+int64 FDTCctvVideoFrame::GetBufferBytes() const
+{
+	int64 Bytes = 0;
+	for (const AVBufferRef* Buffer : Frame->buf)
+	{
+		Bytes += Buffer != nullptr ? Buffer->size : 0;
+	}
+	for (int32 Index = 0; Index < Frame->nb_extended_buf; ++Index)
+	{
+		Bytes += Frame->extended_buf[Index]->size;
+	}
+	return Bytes;
+}
+
 FDTCctvYuvPlanes FDTCctvVideoFrame::GetPlanes() const
 {
 	FDTCctvYuvPlanes Planes;

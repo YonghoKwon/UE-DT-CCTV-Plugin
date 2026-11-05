@@ -50,6 +50,7 @@ namespace
 		Total.DecodeErrors += Stats.DecodeErrors;
 		Total.Reconnects += Stats.Reconnects;
 		Total.PeakQueuedFrames = FMath::Max(Total.PeakQueuedFrames, Stats.PeakQueuedFrames);
+		Total.PeakQueuedFrameBytes = FMath::Max(Total.PeakQueuedFrameBytes, Stats.PeakQueuedFrameBytes);
 		DTCctvMergeFrameAgeStats(Total, Stats);
 	}
 }
@@ -118,6 +119,11 @@ void UDTCctvStream::StartSession(bool bSubStream)
 	const FString& Url = bSubStream ? Config.SubUrl : Config.Url;
 	TSharedPtr<FDTCctvSession, ESPMode::ThreadSafe> NewSession =
 		MakeShared<FDTCctvSession, ESPMode::ThreadSafe>(MakeParams(Config, Url));
+	if (ViewSize.X > 0.0 && ViewSize.Y > 0.0)
+	{
+		// 알고 있는 표시 크기를 먼저 전달해 첫 프레임의 원본 크기 임시 할당을 줄인다.
+		NewSession->SetDesiredOutputSize(FIntPoint(FMath::Max(2, FMath::CeilToInt(ViewSize.X)), FMath::Max(2, FMath::CeilToInt(ViewSize.Y))));
+	}
 	NewSession->Start();
 
 	if (Session.IsValid())
@@ -350,6 +356,7 @@ FDTCctvStreamStats UDTCctvStream::GetStats() const
 	Stats.DecodeErrors += Accumulated.DecodeErrors;
 	Stats.Reconnects += Accumulated.Reconnects;
 	Stats.PeakQueuedFrames = FMath::Max(Stats.PeakQueuedFrames, Accumulated.PeakQueuedFrames);
+	Stats.PeakQueuedFrameBytes = FMath::Max(Stats.PeakQueuedFrameBytes, Accumulated.PeakQueuedFrameBytes);
 	DTCctvMergeFrameAgeStats(Stats, Accumulated);
 	Stats.RenderCommandsInFlight = RenderInFlight.IsValid() ? RenderInFlight->load() : 0;
 	Stats.FramesDisplayed = FramesDisplayed;

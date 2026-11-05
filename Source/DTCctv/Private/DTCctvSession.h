@@ -65,6 +65,7 @@ private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FDTCctvHwFallbackTest;
 	friend class FDTCctvFrameBurstTest;
+	friend class FDTCctvPreparedSizeTest;
 #endif
 	class FWorker;
 
@@ -119,6 +120,9 @@ private:
 	FIntPoint DesiredOutputSize = FIntPoint::ZeroValue;
 	TArray<FDTCctvVideoFramePtr, TInlineAllocator<8>> PendingFrames;
 	int32 PeakQueuedFrames = 0;
+	int64 PendingFrameBytes = 0;
+	int64 PeakPendingFrameBytes = 0;
+	FIntPoint PreparedFrameSize = FIntPoint::ZeroValue;
 	FDTCctvFrameAgeAccumulator FrameAge;
 	double FrameBacklogSinceSeconds = 0.0;
 	FString CodecName;

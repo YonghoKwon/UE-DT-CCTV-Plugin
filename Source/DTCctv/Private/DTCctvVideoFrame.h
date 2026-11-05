@@ -19,6 +19,7 @@ public:
 	FIntPoint GetSize() const;
 	FIntPoint GetSourceSize() const { return SourceSize; }
 	double GetDecodedSeconds() const { return DecodedSeconds; }
+	int64 GetBufferBytes() const;
 	FDTCctvYuvPlanes GetPlanes() const;
 
 private:

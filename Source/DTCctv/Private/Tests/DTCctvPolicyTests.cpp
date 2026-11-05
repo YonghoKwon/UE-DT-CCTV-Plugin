@@ -228,6 +228,8 @@ bool FDTCctvFrameBurstTest::RunTest(const FString& Parameters)
 	Session.FillStats(Stats);
 	TestEqual(TEXT("짧은 지연의 8프레임을 순서대로 보존"), Stats.QueuedFrames, 8);
 	TestEqual(TEXT("버스트 대체 없음"), Stats.FramesSuperseded, int64(0));
+	const int64 BufferBytes = Stats.QueuedFrameBytes;
+	TestTrue(TEXT("대기 프레임 메모리 계측"), BufferBytes > 0);
 	for (int32 Index = 0; Index < 8; ++Index)
 	{
 		FDTCctvVideoFramePtr Output = Session.TakeFrame();
@@ -245,6 +247,8 @@ bool FDTCctvFrameBurstTest::RunTest(const FString& Parameters)
 	Session.FillStats(Stats);
 	TestEqual(TEXT("상한은 유지"), Stats.QueuedFrames, 8);
 	TestEqual(TEXT("상한 초과는 기존 이름으로 집계"), Stats.FramesSuperseded, int64(1));
+	// FFmpeg의 writable 복사는 처음 할당과 버퍼 패딩 크기가 다를 수 있다.
+	TestEqual(TEXT("대체 후8개 실제 버퍼 크기를 정확히 집계"), Stats.QueuedFrameBytes, int64(8) * static_cast<int64>(Frame->buf[0]->size));
 	av_frame_free(&Frame);
 	return true;
 }
@@ -293,6 +297,39 @@ bool FDTCctvLatencyPolicyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("새 프레임 없는 경우 마지막 표본을 숨기지 않음"), DTCctvChooseStaleFrameSkip(Only, 1.0), 0);
 	const double Boundary[] = { 0.040, 0.024 };
 	TestEqual(TEXT("40ms 경계 보존"), DTCctvChooseStaleFrameSkip(Boundary, 1.0), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDTCctvPreparedSizeTest, "DTCctv.Policies.InitialPreparedSize", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::SmokeFilter)
+bool FDTCctvPreparedSizeTest::RunTest(const FString& Parameters)
+{
+	FDTCctvSession Session{ FDTCctvSessionParams() };
+	Session.SetDesiredOutputSize(FIntPoint(480, 270));
+	AVFrame* Frame = av_frame_alloc();
+	if (!TestNotNull(TEXT("원본 프레임 할당"), Frame))
+	{
+		return false;
+	}
+	Frame->format = AV_PIX_FMT_YUV420P;
+	Frame->width = 1920;
+	Frame->height = 1440;
+	if (av_frame_get_buffer(Frame, 32) < 0)
+	{
+		av_frame_free(&Frame);
+		return false;
+	}
+	Session.OutputFrame(Frame);
+	FDTCctvVideoFramePtr Output = Session.TakeFrame();
+	if (TestTrue(TEXT("첫 출력 존재"), Output.IsValid()))
+	{
+		TestEqual(TEXT("4:3 원본 비율을 유지한 첫 프레임"), Output->GetSize(), FIntPoint(360, 270));
+		TestEqual(TEXT("축소 전 원본 메타데이터 보존"), Output->GetSourceSize(), FIntPoint(1920, 1440));
+		TestTrue(TEXT("원본8장 임시 할당 대신 작은 버퍼 사용"), Output->GetBufferBytes() < 1024 * 1024);
+	}
+	FDTCctvStreamStats Stats;
+	Session.FillStats(Stats);
+	TestEqual(TEXT("소비 후 대기 버퍼 해제"), Stats.QueuedFrameBytes, int64(0));
+	av_frame_free(&Frame);
 	return true;
 }
 
