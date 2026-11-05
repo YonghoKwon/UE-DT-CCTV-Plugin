@@ -2,7 +2,7 @@
 
 UE 5.3 프로젝트에서 RTSP CCTV를 표시하는 Windows·Linux용 C++ 플러그인입니다. DTCore나 운영 프로젝트에 의존하지 않으며 플러그인 안에 블루프린트·맵·위젯 에셋을 넣지 않습니다. 오디오는 지원하지 않습니다.
 
-현재 CCTV-01C에서 사용자 실행 보류 해제 후 CCTV-01A·01B 변경의 Editor·Win64·Linux 빌드와 패키징, 단위 테스트 7개가 성공했습니다. **패키지 재생·장애·크기 변경·장시간·Pixel Streaming 공존 게이트는 아직 미수행입니다.** 다른 UE 작업과 겹치지 않게 점검하며 순서대로 측정합니다.
+현재 CCTV-01C에서 Editor·Win64·Linux 빌드와 패키징, 단위 테스트 7개가 성공했습니다. Windows 16채널 패키지, Linux 소프트웨어 디코딩, PS 로드 공존, 크기·서브 전환과 장애 복구를 검증했습니다. **60분 소크는 재생·손실·재연결 조건을 충족했지만 스레드 121~123개 변동으로 FAIL입니다.** Linux Vulkan/NVDEC와 실제 Pixel Streaming 동시 인코딩 부하는 미검증입니다.
 
 ## 프로젝트에 적용
 
@@ -20,7 +20,7 @@ UE 5.3 프로젝트에서 RTSP CCTV를 표시하는 Windows·Linux용 C++ 플러
 
 Windows는 FFmpeg DLL 5개, Linux는 SONAME 파일 5개를 실행 바이너리 옆에 스테이징합니다. Linux의 확장자 `.so` 파일은 버전 파일을 가리키는 텍스트 링커 스크립트입니다. 이를 바이너리로 교체하거나 버전 라이브러리를 빼면 안 됩니다. 자세한 버전·LGPL 정보는 [동봉 FFmpeg 설명](Source/ThirdParty/DTCctvFFmpeg/README.md)에 있습니다.
 
-**기존 FFMPEGMedia 플러그인과 함께 사용하지 말 것.** 이 조합은 시험 대상에서 제외했습니다. Pixel Streaming은 TestHost에서 활성화해 시험을 준비했으며 Windows·Linux의 실제 심볼 공존은 아직 확인하지 않았습니다. 실행기의 `ps_coexist` 판정 범위는 **"플러그인 로드 공존만 확인, 실제 스트리밍 동시 부하는 미검증"**입니다. 현재는 그 로드 공존 시험도 미수행입니다. 기존 합격 기준인 PixelStreaming 활성화 빌드의 시작과 16채널 재생은 유지합니다.
+**기존 FFMPEGMedia 플러그인과 함께 사용하지 말 것.** 이 조합은 시험 대상에서 제외했습니다. Pixel Streaming을 활성화한 Windows·Linux 빌드의 마운트와 16채널 재생을 확인했습니다. 판정 범위는 **"플러그인 로드 공존만 확인, 실제 스트리밍 동시 부하는 미검증"**입니다. Linux는 nullrhi 소프트웨어 디코딩 범위입니다.
 
 ## UMG에서 사용
 
@@ -106,7 +106,11 @@ URL은 `DTCctvMaskUrlCredentials`로 계정을 가립니다. 운영 코드에서
 
 2026-11-05 CCTV-01C에서 수정 코드를 Windows Editor와 Windows·Linux Development Game 대상으로 빌드·패키징했습니다. 단위 테스트는 신규 `FrameMetadata`, `OutputWatchdog`를 포함해 7개 성공·실패 0·미수행 0입니다. 양쪽 패키지에 FFmpeg 파일 5개씩 포함됐고, 쿡된 Windows SM5 및 Linux Vulkan SM5·SM6 전역 캐시에서 `FDTCctvYuvPS`를 확인했습니다. Linux ELF는 `libavcodec.so.62` 등 버전 SONAME을 참조합니다.
 
-임시 `cctv/pkg` 폴더의 패키지는 CCTV-01A·01B 수정 코드를 반영해 다시 만들었습니다. 빌드·단위 테스트 합격은 실제 패키지 재생의 합격을 뜻하지 않습니다. 실제 패키지 FPS, Linux RTSP, 장애 복구, 스크린샷, 60분 자원 추세의 측정값은 아직 없습니다. 목표 72시간 안정성 역시 미검증입니다. CCTV-01C 게이트별 진행은 `Saved/Reports/CCTV-01C/progress.md`에 기록합니다.
+임시 `cctv/pkg` 패키지는 수정 코드를 반영합니다. 로컬 합성 H.264 RTSP 입력 1920×1080/60fps, 16클라이언트, Windows 1920×1080 오프스크린에서 69.2초 측정한 평균 디코딩은 59.986fps, 표시는 59.986fps, 패킷 손실·재연결은 0입니다. HW CUDA 4채널과 SW 12채널을 확인했습니다. 30fps 입력은 69.1초 동안 디코딩·표시 30.000fps였습니다.
+
+RHEL 8.10/glibc 2.28 컨테이너의 nullrhi 소프트웨어 디코딩에서 FFmpeg 로드와 16채널 Playing을 확인했습니다. Vulkan 시도는 `VK_ERROR_INCOMPATIBLE_DRIVER`·종료139로 실패했습니다. Windows 서버 재시작 후 전 채널 복구 관측값은 4.908초이며 CSV 표본 간격 오차가 있습니다. 크기·서브 전환 PNG를 직접 표본 검수했고 Close/Open 5회 후 마지막 재생 구간의 핸들·스레드·GPU 메모리는 안정됐습니다.
+
+60분 소크 측정 구간 3604.1초의 디코딩·표시는 각각 59.999fps, 패킷 손실·재연결·디코딩 오류는 0입니다. 다만 10~60분 스레드가 121~123개로 변해 일정 기준은 FAIL입니다. 같은 구간 Private 메모리는 +7.77MiB(회귀 +5.35MiB/h, 양 끝값 +9.34MiB/h), GPU Dedicated는 +0.039MiB였습니다. 작은 양의 메모리 추세만으로 누수 여부를 확정하지 않았습니다. 72시간 안정성·실카메라·회사 수용 검증은 미수행입니다. 근거와 재시도 이력은 `Saved/Reports/CCTV-01C/RESULT.md`, 진행은 `progress.md`에 기록합니다.
 
 | 준비한 하네스 옵션 | 시나리오·산출물 |
 |---|---|
@@ -124,15 +128,17 @@ URL은 `DTCctvMaskUrlCredentials`로 계정을 가립니다. 운영 코드에서
 
 `fault_test.ps1`도 기본적으로 실행하지 않으며, 실행 시 직접 시작한 PID의 생성 시각과 실행 경로를 확인한 후에만 종료합니다. 준비한 실행기와 자원 수집·정리 경로 자체의 실행 검증도 남아 있습니다.
 
-측정용 Windows 게임은 숨김 창 대신 `-RenderOffScreen`으로 실행하도록 준비했습니다. `WindowStyle Hidden`은 mediamtx·ffmpeg에만 적용합니다. 첫 Windows 측정은 워밍업 뒤 `output_w > 0`과 최종 PNG의 비검은 픽셀 표본을 확인하며, 0 크기·검은 화면·PNG 읽기 실패는 `INVALID`로 기록합니다. 이 확인은 오프스크린 렌더링이 실제로 동작하는지 점검하기 위한 것이며, 화면 품질과 전환 깜빡임의 직접 검수를 대신하지 않습니다. 현재는 이 경로도 실행하지 않았습니다.
+측정용 Windows 게임은 숨김 창 대신 `-RenderOffScreen`으로 실행하도록 준비했습니다. `WindowStyle Hidden`은 mediamtx·ffmpeg에만 적용합니다. 첫 Windows 측정은 워밍업 뒤 `output_w > 0`과 최종 PNG의 비검은 픽셀 표본을 확인하며, 0 크기·검은 화면·PNG 읽기 실패는 `INVALID`로 기록합니다. 이 확인은 오프스크린 렌더링이 실제로 동작하는지 점검하기 위한 것이며, 화면 품질과 전환 깜빡임의 직접 검수를 대신하지 않습니다. CCTV-01C에서 오프스크린·1920×1080 PNG와 양수 출력 크기를 확인했습니다.
 
 결과는 `Saved/Reports/CCTV-01/pending-<시각>/`, 큰 빌드·실행 로그는 `Saved/Logs/CCTV-01/`에 둡니다. 패키지는 저장소 밖 기존 임시 패키지 폴더를 사용합니다. Windows 16채널 1080p60 기준은 60초 이상, 평균 디코딩·표시 각각 58fps 이상, 패킷 손실·재연결 0으로 유지합니다. Docker GPU 불가 시 RHEL 8 소프트웨어 디코딩만 확인하고 렌더링·NVDEC는 미수행으로 남깁니다. 연속 PNG의 검은 화면·깜빡임·마지막 프레임 유지, 반복 전후 자원과 장시간 누수 여부는 직접 검수하기 전까지 `REVIEW_REQUIRED`입니다.
 
 ## 한계
 
-- 패키지 재생과 Linux RHEL 8 실제 로드, Pixel Streaming 공존은 아직 검증하지 않았습니다.
+- Linux Vulkan/NVDEC는 드라이버 오류로 미검증이며, 로더·RTSP·PS 로드 공존은 소프트웨어 디코딩 범위로 검증했습니다.
+- 위 측정은 로컬 합성 입력 범위이며 Linux 렌더링과 실카메라·회사 수용 검증으로 확대 해석하지 않습니다.
 - `ps_coexist` 결과는 플러그인 로드 공존 범위입니다. 실제 Pixel Streaming 클라이언트 연결·영상 수신과 NVENC 인코딩 중 RTSP 16채널 동시 부하는 미검증입니다. 실행기 결과의 `known_limits`와 `user_checks`에도 이 한계를 남깁니다.
-- 렌더 명령 대기 중 GC, 해상도 변경, 장치 오류 복구, Close/Open 자원 회수는 실제 UE 시험이 필요합니다.
+- 렌더 명령 대기 중 강제 GC와 실제 GPU 장치 오류 복구의 별도 재현 시험은 남아 있습니다.
+- 크기 전환은 시험했지만, 극단적으로 작은 영상에서 크게 확대하는 순간 기존 저해상도 프레임이 잠시 흐려지는 표본이 있었습니다. 다음 0.5초 PNG 표본에서 회복했습니다. PNG 표본은 모든 렌더 프레임의 무깜빡임을 보증하지 않습니다.
 - 서브 전환 중 기존·새 연결이 잠시 공존하며 새 주소가 실패하면 전환 대기 세션이 재연결을 계속합니다.
 - 프레임 대기열은 최대 3장입니다. 카메라보다 낮은 표시 FPS에서는 모든 프레임을 화면에 표시할 수 없습니다.
 - 오디오·탐색·시계 동기화와 GPU 간 직접 표면 공유는 지원하지 않습니다.
