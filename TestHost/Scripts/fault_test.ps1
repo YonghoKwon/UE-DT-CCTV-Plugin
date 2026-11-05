@@ -1,46 +1,89 @@
-# RTSP 서버를 강제 종료했다가 다시 띄워 자동 복구를 확인한다.
-# 사용법: fault_test.ps1 -Tools <mediamtx.exe 폴더> -FFmpeg <ffmpeg.exe 경로> -Out <결과 폴더>
+# 직접 시작한 RTSP 서버만 중단·복구한다. 기본 실행은 계획 출력뿐이다.
+[CmdletBinding()]
 param(
 	[Parameter(Mandatory)][string]$Tools,
 	[Parameter(Mandatory)][string]$FFmpeg,
 	[Parameter(Mandatory)][string]$Out,
-	[int]$Count = 16,
-	[int]$OutageSeconds = 20
+	[string]$Executable = 'C:\Program Files\Epic Games\UE_5.3\Engine\Binaries\Win64\UnrealEditor.exe',
+	[ValidateRange(1, 64)][int]$Count = 16,
+	[ValidateRange(1, 60)][int]$OutageSeconds = 20,
+	[switch]$Execute
 )
 
-$engine = "C:\Program Files\Epic Games\UE_5.3\Engine\Binaries\Win64\UnrealEditor.exe"
-$project = (Resolve-Path "$PSScriptRoot\..\DTCctvTestHost.uproject").Path
-$csv = Join-Path $Out "fault.csv"
-$pubArgs = "-hide_banner -loglevel error -re -f lavfi -i testsrc2=size=1920x1080:rate=30 -c:v h264_nvenc -preset p1 -tune ll -bf 0 -g 30 -b:v 4M -pix_fmt yuv420p -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:8554/cam"
-
-function Start-Server {
-	Start-Process (Join-Path $Tools "mediamtx.exe") -ArgumentList "mediamtx.yml" -WorkingDirectory $Tools -WindowStyle Hidden -PassThru | Out-Null
-	Start-Sleep -Seconds 2
-	return Start-Process $FFmpeg -ArgumentList $pubArgs -WindowStyle Hidden -PassThru
+$ErrorActionPreference = 'Stop'
+. "$PSScriptRoot\DTCctvTestCommon.ps1"
+if (-not $Execute)
+{
+	Write-Output '계획만 출력했습니다. UE 사용이 다시 허용된 뒤 -Execute로 실행하십시오. 서버 재시작 및 전 채널 복구를 검사합니다.'
+	return
 }
 
-Stop-Process -Name mediamtx -Force -ErrorAction SilentlyContinue
-$publisher = Start-Server
-Start-Sleep -Seconds 3
-
-$gameArgs = "`"$project`" -game -windowed -ResX=1920 -ResY=1080 -unattended -nosplash -CctvUrl=rtsp://127.0.0.1:8554/cam -CctvCount=$Count -CctvSeconds=$(60 + $OutageSeconds) -CctvCsv=`"$csv`" -ExecCmds=`"r.VSync 0,t.MaxFPS 60`" -log=Fault.log"
-$game = Start-Process $engine -ArgumentList $gameArgs -PassThru
-
-Start-Sleep -Seconds 25
-$killedAt = Get-Date
-Stop-Process -Name mediamtx -Force
-Stop-Process -Id $publisher.Id -Force -ErrorAction SilentlyContinue
-Write-Output "server killed"
-
-Start-Sleep -Seconds $OutageSeconds
-$publisher = Start-Server
-$restoredAt = Get-Date
-Write-Output "server restored after $([int]($restoredAt - $killedAt).TotalSeconds)s"
-
-$game.WaitForExit(180000) | Out-Null
-Stop-Process -Id $publisher.Id -Force -ErrorAction SilentlyContinue
-Stop-Process -Name mediamtx -Force -ErrorAction SilentlyContinue
-Write-Output "game exit: $($game.ExitCode)"
-Import-Csv $csv | ForEach-Object {
-	Write-Output ("{0,6} playing={1,2} fps={2,5} used={3,5}MB reconn={4,3} dropped={5} err={6}" -f $_.t, $_.playing, $_.decode_fps_avg, $_.used_mb, $_.reconnects, $_.dropped, $_.errors)
+Assert-DTCctvIdle
+$project = (Resolve-Path -LiteralPath "$PSScriptRoot\..\DTCctvTestHost.uproject").Path
+New-Item -ItemType Directory -Path $Out -Force | Out-Null
+$Out = (Resolve-Path -LiteralPath $Out).Path
+$run = Join-Path $Out ('fault-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+New-Item -ItemType Directory -Path $run | Out-Null
+$csv = Join-Path $run 'fault.csv'
+$owned = [System.Collections.Generic.List[object]]::new()
+$result = [ordered]@{ gate = 'fault'; status = 'FAIL'; note = ''; recovery_seconds = $null; recovery_target_seconds = 5; artifacts = $run }
+try
+{
+	$source = Start-DTCctvSource -Tools $Tools -FFmpeg $FFmpeg -Out $run -Tag 'before' -Owned $owned
+	$prefix = if ([IO.Path]::GetFileName($Executable) -like 'UnrealEditor*') { '"' + $project + '" -game ' } else { '' }
+	$duration = 90 + $OutageSeconds
+	$arguments = $prefix + '-windowed -ResX=1920 -ResY=1080 -unattended -nosplash -nosound -CctvUrl=rtsp://127.0.0.1:8554/cam -CctvCount=' + $Count + ' -CctvSeconds=' + $duration + ' -CctvCsv="' + $csv + '" -ExecCmds="r.VSync 0,t.MaxFPS 144" -abslog="' + $run + '\game.log"'
+	$game = Start-DTCctvOwnedProcess -File $Executable -Arguments $arguments -WorkingDirectory (Split-Path $Executable) -LogPrefix "$run\game" -Owned $owned
+	$deadline = [datetime]::UtcNow.AddSeconds(45)
+	do
+	{
+		if ($game.Process.HasExited) { throw '첫 재생 전에 게임이 종료됐습니다.' }
+		$rows = @(if (Test-Path -LiteralPath $csv) { Import-Csv -LiteralPath $csv })
+		$playing = $rows.Count -gt 0 -and [int]$rows[-1].playing -eq $Count -and [double]$rows[-1].t -ge 15
+		if ($playing) { break }
+		Start-Sleep -Milliseconds 200
+	} while ([datetime]::UtcNow -lt $deadline)
+	if (-not $playing) { throw '장애 주입 전 전 채널 재생을 확인하지 못했습니다.' }
+	$before = $rows[-1]
+	$stoppedAt = [datetime]::UtcNow
+	Stop-DTCctvOwnedProcess $source.Server
+	Stop-DTCctvOwnedProcess $source.Publisher
+	Start-Sleep -Seconds $OutageSeconds
+	$source = Start-DTCctvSource -Tools $Tools -FFmpeg $FFmpeg -Out $run -Tag 'after' -Owned $owned
+	$restoredAt = $source.ReadyAt
+	$baseline = @(Import-Csv -LiteralPath $csv)[-1]
+	$deadline = [datetime]::UtcNow.AddSeconds(30)
+	do
+	{
+		if ($game.Process.HasExited) { throw '복구 전에 게임이 종료됐습니다.' }
+		$rows = @(Import-Csv -LiteralPath $csv)
+		$sample = $rows[-1]
+		$recovered = [double]$sample.t -gt [double]$baseline.t -and [int]$sample.playing -eq $Count -and [long]$sample.decoded -gt [long]$baseline.decoded
+		if ($recovered)
+		{
+			$result.recovery_seconds = [math]::Round(([datetime]::UtcNow - $restoredAt).TotalSeconds, 3)
+			break
+		}
+		Start-Sleep -Milliseconds 100
+	} while ([datetime]::UtcNow -lt $deadline)
+	if (-not $recovered) { throw '복구 후 30초 안에 전 채널 재생을 확인하지 못했습니다.' }
+	if (-not $game.Process.WaitForExit(($duration + 30) * 1000)) { throw '게임이 지정 시험 시간 후 종료되지 않았습니다.' }
+	$result.status = if ($game.Process.ExitCode -eq 0) { 'PASS' } else { 'FAIL' }
+	$result.note = '전 채널 재생과 디코딩 재개를 확인했습니다. 복구 시간은 송출 준비 로그 이후 CSV 관측값이며 표본 간격 오차가 있습니다.'
+	$result['exit_code'] = $game.Process.ExitCode
+	$result['outage_seconds'] = ([datetime]$restoredAt - $stoppedAt).TotalSeconds
+	$result['within_recovery_target'] = $result.recovery_seconds -le 5
+	$result['before_fault'] = $before
+	$result['after_recovery'] = $sample
 }
+catch
+{
+	$result.note = $_.Exception.Message
+	throw
+}
+finally
+{
+	try { Close-DTCctvOwnedProcesses $owned }
+	finally { Write-DTCctvJson -Path (Join-Path $run 'result.json') -Value $result }
+}
+Write-Output "장애 복구 시험: $($result.status), 복구 $($result.recovery_seconds)초, 결과 $run"

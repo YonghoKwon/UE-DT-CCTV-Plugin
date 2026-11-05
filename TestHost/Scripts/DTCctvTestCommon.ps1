@@ -1,0 +1,96 @@
+# 이 파일은 함수만 정의한다. 시험 실행은 별도 스크립트의 -Execute가 필요하다.
+Set-StrictMode -Version Latest
+
+function Assert-DTCctvIdle
+{
+	param([int[]]$OwnedIds = @())
+	$busy = @(Get-CimInstance Win32_Process | Where-Object {
+		$_.ProcessId -notin $OwnedIds -and (
+			$_.Name -match '^(Unreal.*|ShaderCompileWorker|DTCctvTestHost|mediamtx|ffmpeg)(\.exe)?$' -or
+			$_.CommandLine -match '(UnrealBuildTool\.(dll|exe)|[\\/]Build\.bat|[\\/]RunUAT\.bat)')
+	})
+	if ($busy.Count -gt 0)
+	{
+		$labels = ($busy | ForEach-Object { '{0} (PID {1})' -f $_.Name, $_.ProcessId }) -join ', '
+		throw "다른 UE·시험 작업이 실행 중이므로 측정을 시작하지 않습니다: $labels"
+	}
+}
+
+function Start-DTCctvOwnedProcess
+{
+	param([string]$File, [string]$Arguments, [string]$WorkingDirectory, [string]$LogPrefix,
+		[System.Collections.Generic.List[object]]$Owned)
+	$resolved = (Resolve-Path -LiteralPath $File -ErrorAction Stop).Path
+	$process = Start-Process -FilePath $resolved -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory `
+		-WindowStyle Hidden -RedirectStandardOutput "$LogPrefix.stdout.log" -RedirectStandardError "$LogPrefix.stderr.log" -PassThru
+	# 원래 프로세스의 핸들과 생성 시각을 보관해 PID 재사용으로 다른 작업을 종료하지 않는다.
+	$entry = [pscustomobject]@{ Process = $process; Id = $process.Id; Started = $null; Path = $resolved }
+	$Owned.Add($entry)
+	$null = $process.Handle
+	$entry.Started = $process.StartTime.ToUniversalTime()
+	return $entry
+}
+
+function Stop-DTCctvOwnedProcess
+{
+	param($Entry)
+	if ($null -eq $Entry -or $Entry.Process.HasExited) { return }
+	$current = Get-Process -Id $Entry.Id -ErrorAction SilentlyContinue
+	if ($null -eq $current) { return }
+	if ($null -eq $Entry.Started -or $current.StartTime.ToUniversalTime() -ne $Entry.Started -or $current.Path -ne $Entry.Path)
+	{
+		throw "PID $($Entry.Id)의 소유권을 확인할 수 없어 종료하지 않았습니다."
+	}
+	Stop-Process -Id $Entry.Id -Force -ErrorAction Stop
+	$Entry.Process.WaitForExit()
+}
+
+function Close-DTCctvOwnedProcesses
+{
+	param([System.Collections.Generic.List[object]]$Owned)
+	$failures = @()
+	for ($index = $Owned.Count - 1; $index -ge 0; --$index)
+	{
+		try { Stop-DTCctvOwnedProcess $Owned[$index] }
+		catch { $failures += $_.Exception.Message }
+		finally { $Owned[$index].Process.Dispose() }
+	}
+	if ($failures.Count -gt 0) { throw ($failures -join '; ') }
+}
+
+function Write-DTCctvJson
+{
+	param([string]$Path, $Value)
+	$json = $Value | ConvertTo-Json -Depth 12
+	[System.IO.File]::WriteAllText($Path, $json, [System.Text.UTF8Encoding]::new($false))
+}
+
+function Start-DTCctvSource
+{
+	param([string]$Tools, [string]$FFmpeg, [string]$Out, [string]$Tag,
+		[int]$Fps = 60, [string]$Path = 'cam', [int]$Width = 1920, [int]$Height = 1080,
+		[System.Collections.Generic.List[object]]$Owned, [switch]$PublisherOnly, [string]$ServerLogPrefix)
+	$server = $null
+	if (-not $PublisherOnly)
+	{
+		$ServerLogPrefix = Join-Path $Out "$Tag.server"
+		$server = Start-DTCctvOwnedProcess -File (Join-Path $Tools 'mediamtx.exe') -Arguments 'mediamtx.yml' `
+			-WorkingDirectory $Tools -LogPrefix $ServerLogPrefix -Owned $Owned
+		Start-Sleep -Seconds 2
+		if ($server.Process.HasExited) { throw '직접 시작한 RTSP 서버가 종료됐습니다. 포트 충돌 여부를 확인하십시오.' }
+	}
+	$arguments = "-hide_banner -loglevel error -re -f lavfi -i testsrc2=size=$($Width)x$($Height):rate=$Fps -c:v h264_nvenc -preset p1 -tune ll -bf 0 -g $Fps -b:v 6M -pix_fmt yuv420p -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:8554/$Path"
+	$publisher = Start-DTCctvOwnedProcess -File $FFmpeg -Arguments $arguments -WorkingDirectory $Tools `
+		-LogPrefix (Join-Path $Out "$Tag.publisher") -Owned $Owned
+	$deadline = [datetime]::UtcNow.AddSeconds(20)
+	do
+	{
+		if ($publisher.Process.HasExited) { throw '직접 시작한 시험 송출기가 종료됐습니다.' }
+		$ready = @(Select-String -LiteralPath "$ServerLogPrefix.stdout.log","$ServerLogPrefix.stderr.log" `
+			-Pattern "is publishing to path '$Path'" -SimpleMatch -ErrorAction SilentlyContinue).Count -gt 0
+		if ($ready) { break }
+		Start-Sleep -Milliseconds 100
+	} while ([datetime]::UtcNow -lt $deadline)
+	if (-not $ready) { throw '시험 경로의 송출 준비 로그를 확인하지 못했습니다.' }
+	return [pscustomobject]@{ Server = $server; Publisher = $publisher; ReadyAt = [datetime]::UtcNow; ServerLogPrefix = $ServerLogPrefix }
+}
