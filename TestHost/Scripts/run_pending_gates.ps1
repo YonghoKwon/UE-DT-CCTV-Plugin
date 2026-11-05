@@ -86,7 +86,7 @@ function Invoke-DTCctvWindowsCase
 			$null = Start-DTCctvSource -Tools $Tools -FFmpeg $FFmpeg -Out $logs -Tag "$Tag-sub" -Fps $Fps -Path sub -Width 640 -Height 360 -PublisherOnly -ServerLogPrefix $source.ServerLogPrefix -Owned $owned
 			$Extra += ' -CctvSubUrl=rtsp://127.0.0.1:8554/sub'
 		}
-		$argsLine = '-RenderOffScreen -windowed -ResX=1920 -ResY=1080 -unattended -nosplash -nosound -CctvUrl=rtsp://127.0.0.1:8554/cam -CctvCount=16 -CctvSeconds=' + $Seconds + ' -CctvCsv="' + $case + '\samples.csv" -CctvShot="' + $case + '\final.png" -ExecCmds="r.VSync 0,t.MaxFPS 144" -abslog="' + $logs + '\' + $Tag + '.game.log" ' + $Extra
+		$argsLine = '-RenderOffScreen -windowed -ForceRes -ResX=1920 -ResY=1080 -unattended -nosplash -nosound -CctvUrl=rtsp://127.0.0.1:8554/cam -CctvCount=16 -CctvSeconds=' + $Seconds + ' -CctvCsv="' + $case + '\samples.csv" -CctvShot="' + $case + '\final.png" -ExecCmds="r.VSync 0,t.MaxFPS 144" -abslog="' + $logs + '\' + $Tag + '.game.log" ' + $Extra
 		$summary['window_mode'] = if ($Windowed) { 'windowed' } else { 'offscreen' }
 		if ($Windowed) { $argsLine = $argsLine.Replace('-RenderOffScreen ', '') }
 		$game = Start-DTCctvOwnedProcess -File $winExe -Arguments $argsLine -WorkingDirectory (Split-Path $winExe) -LogPrefix "$logs\$Tag.game" -Owned $owned
@@ -112,6 +112,10 @@ function Invoke-DTCctvWindowsCase
 			$summary.render_validation.output_w_positive = @($steady | Where-Object { [int]$_.output_w -le 0 }).Count -eq 0
 			if (-not $summary.render_validation.output_w_positive) { throw '첫 Windows 측정의 output_w가 0이므로 측정을 무효로 기록합니다.' }
 			$summary.render_validation.screenshot = Get-DTCctvScreenshotCheck -Path "$case\final.png"
+			if ($summary.render_validation.screenshot.width -ne 1920 -or $summary.render_validation.screenshot.height -ne 1080)
+			{
+				throw '요청한 1920x1080 캡처 크기가 아니므로 측정을 무효로 기록합니다.'
+			}
 			if (-not $summary.render_validation.screenshot.non_black) { throw '첫 Windows 측정의 PNG가 검은 화면이므로 측정을 무효로 기록합니다.' }
 			$summary.render_validation.valid = $true
 		}
