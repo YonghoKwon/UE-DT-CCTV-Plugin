@@ -59,6 +59,9 @@ public:
 	static void ShutdownRetired();
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FDTCctvHwFallbackTest;
+#endif
 	class FWorker;
 
 	static int InterruptCallback(void* Opaque);

@@ -275,7 +275,7 @@ int FDTCctvSession::InterruptCallback(void* Opaque)
 
 AVPixelFormat FDTCctvSession::GetFormatCallback(AVCodecContext* Context, const AVPixelFormat* Formats)
 {
-	const FDTCctvSession* Session = static_cast<const FDTCctvSession*>(Context->opaque);
+	FDTCctvSession* Session = static_cast<FDTCctvSession*>(Context->opaque);
 	for (const AVPixelFormat* Format = Formats; *Format != AV_PIX_FMT_NONE; ++Format)
 	{
 		if (static_cast<int32>(*Format) == Session->HwPixelFormat)
@@ -284,7 +284,14 @@ AVPixelFormat FDTCctvSession::GetFormatCallback(AVCodecContext* Context, const A
 		}
 	}
 	UE_LOG(LogDTCctv, Warning, TEXT("디코더가 하드웨어 형식을 제공하지 않아 기본 형식을 사용합니다."));
-	return avcodec_default_get_format(Context, Formats);
+	const AVPixelFormat SoftwareFormat = avcodec_default_get_format(Context, Formats);
+	Session->bHwFailed.store(true);
+	if (SoftwareFormat != AV_PIX_FMT_NONE)
+	{
+		FScopeLock ScopeLock(&Session->Lock);
+		Session->DecoderName = TEXT("software");
+	}
+	return SoftwareFormat;
 }
 
 void FDTCctvSession::ExtendDeadline(double Seconds)

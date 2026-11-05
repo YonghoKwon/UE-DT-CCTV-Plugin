@@ -5,6 +5,7 @@
 #include "DTCctvFFmpegInclude.h"
 #include "DTCctvPacketQueue.h"
 #include "DTCctvPolicies.h"
+#include "DTCctvSession.h"
 #include "DTCctvVideoFrame.h"
 #include "DTCctvYuvRenderer.h"
 
@@ -167,6 +168,30 @@ bool FDTCctvOutputWatchdogTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("재생 뒤 SW 출력 중단은 일반 재연결"), DTCctvEvaluateOutputWatchdog(155.0, 100.0, 129.0, 150.0, 5.0, false) == FAction::Reconnect);
 	TestTrue(TEXT("읽기 기한이 길어도 키프레임 대기는 30초"), DTCctvEvaluateOutputWatchdog(130.0, 100.0, 0.0, 0.0, 60.0, true) == FAction::Reconnect);
 	TestTrue(TEXT("키프레임 표식 전에는 출력 이력이 있어도 SW 강제 없음"), DTCctvEvaluateOutputWatchdog(155.0, 100.0, 0.0, 150.0, 5.0, true) == FAction::Reconnect);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDTCctvHwFallbackTest, "DTCctv.Policies.HwFormatFallback", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::SmokeFilter)
+bool FDTCctvHwFallbackTest::RunTest(const FString& Parameters)
+{
+	FDTCctvSession Session{ FDTCctvSessionParams() };
+	AVCodecContext* Context = avcodec_alloc_context3(nullptr);
+	if (!TestNotNull(TEXT("코덱 문맥 할당"), Context))
+	{
+		return false;
+	}
+	Context->opaque = &Session;
+	Session.HwPixelFormat = AV_PIX_FMT_CUDA;
+	const AVPixelFormat HardwareFormats[] = { AV_PIX_FMT_CUDA, AV_PIX_FMT_NV12, AV_PIX_FMT_NONE };
+	TestTrue(TEXT("지원되는 하드웨어 형식 선택"), FDTCctvSession::GetFormatCallback(Context, HardwareFormats) == AV_PIX_FMT_CUDA);
+	TestFalse(TEXT("정상 협상은 오류 아님"), Session.bHwFailed.load());
+	const AVPixelFormat SoftwareFormats[] = { AV_PIX_FMT_NV12, AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE };
+	TestTrue(TEXT("하드웨어 형식 제거 후 소프트웨어 선택"), FDTCctvSession::GetFormatCallback(Context, SoftwareFormats) == AV_PIX_FMT_NV12);
+	TestTrue(TEXT("읽기 스레드에 하드웨어 실패 전달"), Session.bHwFailed.load());
+	FDTCctvStreamStats Stats;
+	Session.FillStats(Stats);
+	TestEqual(TEXT("실제 폴백을 디코더 통계에 표시"), Stats.DecoderName, FString(TEXT("software")));
+	avcodec_free_context(&Context);
 	return true;
 }
 
