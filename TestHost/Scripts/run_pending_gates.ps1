@@ -42,6 +42,7 @@ $linuxRendering = $false
 function Invoke-DTCctvBuild
 {
 	# 빌드는 동기 실행하며 RTSP 송출이나 게임 실행과 겹치지 않는다.
+	& "$PSScriptRoot\setup_testhost.ps1"
 	$build = Join-Path $Engine 'Engine\Build\BatchFiles\Build.bat'
 	$uat = Join-Path $Engine 'Engine\Build\BatchFiles\RunUAT.bat'
 	& $build DTCctvTestHostEditor Win64 Development "-Project=$project" -WaitMutex -NoHotReload *> "$logs\editor-build.log"
