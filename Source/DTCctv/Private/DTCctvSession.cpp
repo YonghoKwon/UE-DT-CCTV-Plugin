@@ -584,13 +584,10 @@ void FDTCctvSession::ReadLoop()
 		}
 		av_packet_unref(Packet);
 
-		if (bHwFailed.load())
+		if (bHwFailed.load() && FirstKeyPacketSeconds > 0.0)
 		{
 			UE_LOG(LogDTCctv, Warning, TEXT("%s: 하드웨어 디코딩 오류로 다시 연결합니다. 키프레임 수신=%d"), *SafeUrl, FirstKeyPacketSeconds > 0.0 ? 1 : 0);
-			if (FirstKeyPacketSeconds > 0.0)
-			{
-				bForceSoftware = true;
-			}
+			bForceSoftware = true;
 			break;
 		}
 
