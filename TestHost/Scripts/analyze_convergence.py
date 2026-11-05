@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""30회 Close/Open의 재생 구간 끝 자원과 마지막10회 수렴을 판정한다."""
+"""Close/Open 재생 구간 끝 자원과 승인된 수렴 기준을 판정한다."""
 import argparse
 import csv
 import datetime as dt
@@ -18,6 +18,49 @@ def slope(points, key):
     ys = [r[key] for r in points]
     xm, ym = sum(xs)/len(xs), sum(ys)/len(ys)
     return sum((x-xm)*(y-ym) for x,y in zip(xs,ys))/sum((x-xm)**2 for x in xs)
+
+
+def apply_approved_thread_policy(summary, module_analysis):
+    from analyze_soak import OS_MODULES
+    endpoints = [r for r in summary['endpoints'] if r['cycle'] > 10]
+    modules = [r for r in module_analysis['selected_endpoints'] if r['cycle'] > 10]
+    names = sorted({m for r in modules for m in r['counts']})
+    ranges = {m: [min(r['counts'].get(m, 0) for r in modules),
+                  max(r['counts'].get(m, 0) for r in modules)] for m in names} if modules else {}
+    required = [m for m in names if m == 'dtcctvtesthost.exe' or m == 'ucrtbase.dll' or m.startswith('nv')]
+    required_fixed = ('dtcctvtesthost.exe' in required and 'ucrtbase.dll' in required
+                      and all(ranges[m][0] == ranges[m][1] for m in required))
+    varying = [m for m in names if ranges[m][0] != ranges[m][1]]
+    only_os_varies = all(m in OS_MODULES for m in varying)
+    baseline = [r for r in endpoints if 11 <= r['cycle'] <= 40]
+    tail = endpoints[-30:]
+    comparisons = {}
+    for key in ('handles', 'threads'):
+        first_max = max((r[key] for r in baseline), default=None)
+        last_max = max((r[key] for r in tail), default=None)
+        comparisons[key] = dict(baseline_max=first_max, tail_max=last_max,
+                                status='PASS' if first_max is not None and last_max is not None and last_max <= first_max else 'FAIL')
+    quality = (module_analysis['status'] == 'PASS' and len(modules) == len(endpoints)
+               and len(endpoints) == summary['observed_opens']-10
+               and all(-2.5 <= r['offset_seconds'] <= 0 for r in modules)
+               and {r['cycle'] for r in modules} == {r['cycle'] for r in endpoints})
+    policy = dict(status='PASS' if quality and required_fixed and only_os_varies
+                  and all(r['status'] == 'PASS' for r in comparisons.values()) else 'FAIL',
+                  source='docs/agent/CCTV-01F.md 사용자 결정(2026-11-06)',
+                  first_ten_excluded=True, observed_cycles=len(endpoints),
+                  baseline_cycles=[r['cycle'] for r in baseline], tail_cycles=[r['cycle'] for r in tail],
+                  comparison_windows_overlap=bool({r['cycle'] for r in baseline} & {r['cycle'] for r in tail}),
+                  coverage_note='E의30회 재판정은 제외 후20회만 관측하며 비교 구간이 겹침. 100회 장기 수렴의 증거로 사용하지 않음.' if summary['observed_opens'] < 100 else '',
+                  sample_quality_pass=quality, required_module_counts_fixed=required_fixed,
+                  only_os_module_counts_vary=only_os_varies, varying_modules=varying,
+                  module_count_ranges=ranges, comparisons=comparisons)
+    summary['old_raw_resource_criteria'] = {k: dict(summary['metrics'][k]) for k in ('handles', 'threads')}
+    summary['approved_thread_criteria'] = policy
+    summary['failures'] = [s for s in summary['failures'] if s not in ('handles 증가 기준 미달', 'threads 증가 기준 미달')]
+    if policy['status'] != 'PASS':
+        summary['failures'].append('사용자 승인 Close/Open 핸들·스레드 기준 미달')
+    summary['status'] = 'FAIL' if summary['failures'] else 'PASS'
+    return summary
 
 
 def analyze(folder, log, interval=10, cycles=30, tail=10, private_limit=1.0, allow_block_plateau=False):
@@ -96,8 +139,17 @@ if __name__ == "__main__":
     parser.add_argument('--tail',type=int,default=10)
     parser.add_argument('--private-limit',type=float,default=1.0)
     parser.add_argument('--allow-block-plateau',action='store_true')
+    parser.add_argument('--approved-thread-policy', action='store_true')
+    parser.add_argument('--modules', type=Path)
     args = parser.parse_args()
     result = analyze(args.folder, args.log, cycles=args.cycles, tail=args.tail, private_limit=args.private_limit, allow_block_plateau=args.allow_block_plateau)
+    if args.approved_thread_policy:
+        from analyze_thread_modules import analyze as analyze_modules
+        if not args.modules:
+            parser.error('--approved-thread-policy requires --modules')
+        module_analysis = analyze_modules(args.modules, args.log, result['endpoints'], max(1, args.cycles-10))
+        (args.folder/'module-analysis.json').write_text(json.dumps(module_analysis, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
+        apply_approved_thread_policy(result, module_analysis)
     (args.folder/"convergence-analysis.json").write_text(json.dumps(result, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
     with (args.folder/"cycle-endpoints.csv").open("w", encoding="utf-8-sig", newline="") as stream:
         writer = csv.DictWriter(stream, list(result["endpoints"][0]))
