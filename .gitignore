@@ -10,3 +10,4 @@ TestHost/Plugins/
 TestHost/Build/
 TestHost/.tools/
 TestHost/Samples/
+TestHost/Scripts/__pycache__/
