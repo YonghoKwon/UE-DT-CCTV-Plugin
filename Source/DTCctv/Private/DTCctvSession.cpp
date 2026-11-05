@@ -666,6 +666,7 @@ void FDTCctvSession::CloseConnection()
 	}
 	VideoStreamIndex = -1;
 	HwPixelFormat = -1;
+	DTCctvHwDevice::ReleaseUnused();
 }
 
 void FDTCctvSession::DecoderMain()

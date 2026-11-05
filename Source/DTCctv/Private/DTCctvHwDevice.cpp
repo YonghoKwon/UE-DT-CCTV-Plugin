@@ -47,3 +47,18 @@ void DTCctvHwDevice::ReleaseAll()
 	}
 	GetDevices().Empty();
 }
+
+void DTCctvHwDevice::ReleaseUnused()
+{
+	FScopeLock Lock(&GetLock());
+	for (auto Iterator = GetDevices().CreateIterator(); Iterator; ++Iterator)
+	{
+		AVBufferRef*& Device = Iterator.Value();
+		if (Device != nullptr && av_buffer_get_ref_count(Device) == 1)
+		{
+			UE_LOG(LogDTCctv, Log, TEXT("사용하지 않는 공유 하드웨어 장치 해제: %s"), UTF8_TO_TCHAR(av_hwdevice_get_type_name(static_cast<AVHWDeviceType>(Iterator.Key()))));
+			av_buffer_unref(&Device);
+			Iterator.RemoveCurrent();
+		}
+	}
+}
