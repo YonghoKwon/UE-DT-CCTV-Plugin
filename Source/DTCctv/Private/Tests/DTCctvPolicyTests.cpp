@@ -185,8 +185,10 @@ bool FDTCctvHwFallbackTest::RunTest(const FString& Parameters)
 	const AVPixelFormat HardwareFormats[] = { AV_PIX_FMT_CUDA, AV_PIX_FMT_NV12, AV_PIX_FMT_NONE };
 	TestTrue(TEXT("지원되는 하드웨어 형식 선택"), FDTCctvSession::GetFormatCallback(Context, HardwareFormats) == AV_PIX_FMT_CUDA);
 	TestFalse(TEXT("정상 협상은 오류 아님"), Session.bHwFailed.load());
-	const AVPixelFormat SoftwareFormats[] = { AV_PIX_FMT_NV12, AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE };
+	const AVPixelFormat SoftwareFormats[] = { AV_PIX_FMT_NV12, AV_PIX_FMT_NONE };
 	TestTrue(TEXT("하드웨어 형식 제거 후 소프트웨어 선택"), FDTCctvSession::GetFormatCallback(Context, SoftwareFormats) == AV_PIX_FMT_NV12);
+	const AVPixelFormat PlanarFormats[] = { AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE };
+	TestTrue(TEXT("I420 단독 폴백 선택"), FDTCctvSession::GetFormatCallback(Context, PlanarFormats) == AV_PIX_FMT_YUV420P);
 	TestTrue(TEXT("읽기 스레드에 하드웨어 실패 전달"), Session.bHwFailed.load());
 	FDTCctvStreamStats Stats;
 	Session.FillStats(Stats);
