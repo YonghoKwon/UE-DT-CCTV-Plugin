@@ -187,8 +187,21 @@ function Start-DTCctvSource
 	if (-not $PublisherOnly)
 	{
 		$ServerLogPrefix = Join-Path $Out "$Tag.server"
-		$server = Start-DTCctvOwnedProcess -File (Join-Path $Tools 'mediamtx.exe') -Arguments 'mediamtx.yml' `
-			-WorkingDirectory $Tools -LogPrefix $ServerLogPrefix -Owned $Owned
+		# 게시 준비 메시지는 info 수준이다. 자식만 재정의하고 원본 설정 파일은 바꾸지 않는다.
+		$previousLevel = [System.Environment]::GetEnvironmentVariable('MTX_LOGLEVEL', 'Process')
+		$previousDestinations = [System.Environment]::GetEnvironmentVariable('MTX_LOGDESTINATIONS', 'Process')
+		try
+		{
+			[System.Environment]::SetEnvironmentVariable('MTX_LOGLEVEL', 'info', 'Process')
+			[System.Environment]::SetEnvironmentVariable('MTX_LOGDESTINATIONS', 'stdout', 'Process')
+			$server = Start-DTCctvOwnedProcess -File (Join-Path $Tools 'mediamtx.exe') -Arguments 'mediamtx.yml' `
+				-WorkingDirectory $Tools -LogPrefix $ServerLogPrefix -Owned $Owned
+		}
+		finally
+		{
+			[System.Environment]::SetEnvironmentVariable('MTX_LOGLEVEL', $previousLevel, 'Process')
+			[System.Environment]::SetEnvironmentVariable('MTX_LOGDESTINATIONS', $previousDestinations, 'Process')
+		}
 		Start-Sleep -Seconds 2
 		if ($server.Process.HasExited) { throw '직접 시작한 RTSP 서버가 종료됐습니다. 포트 충돌 여부를 확인하십시오.' }
 	}
