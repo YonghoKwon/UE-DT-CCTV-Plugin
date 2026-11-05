@@ -19,7 +19,7 @@ struct FDTCctvSessionParams
 	float ConnectTimeoutSeconds = 5.f;
 	float ReadTimeoutSeconds = 5.f;
 	float MinReconnectDelaySeconds = 0.5f;
-	float MaxReconnectDelaySeconds = 10.f;
+	float MaxReconnectDelaySeconds = 2.f;
 	int32 MaxConcurrentConnects = 8;
 	int32 MaxQueuedPackets = 120;
 	int32 MaxHardwareDecodeStreams = 4;

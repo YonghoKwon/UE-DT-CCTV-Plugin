@@ -59,7 +59,7 @@ struct FDTCctvStreamConfig
 	float MinReconnectDelaySeconds = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DTCctv", meta = (ClampMin = "0.1"))
-	float MaxReconnectDelaySeconds = 10.f;
+	float MaxReconnectDelaySeconds = 2.f;
 };
 
 USTRUCT(BlueprintType)
