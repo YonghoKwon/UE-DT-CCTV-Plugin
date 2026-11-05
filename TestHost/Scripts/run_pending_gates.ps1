@@ -174,6 +174,9 @@ function Invoke-DTCctvLinuxCase
 		$created = & docker @dockerArgs $LinuxImage -lc $command 2> "$logs\$Tag.create.log"
 		if ($LASTEXITCODE -ne 0 -or $created -notmatch '^[0-9a-f]{64}$') { throw '시험 컨테이너 생성 실패.' }
 		$containerId = [string]$created
+		Write-DTCctvJson -Path "$case\owned-container.json" -Value @{
+			id = $containerId; image = $LinuxImage; created_at = (Get-Date -Format o)
+		}
 		$dockerExe = (Get-Command docker -ErrorAction Stop).Source
 		$client = Start-DTCctvOwnedProcess -File $dockerExe -Arguments "start -a $containerId" -WorkingDirectory $repo -LogPrefix "$logs\$Tag.docker" -Owned $owned
 		$deadline = [datetime]::UtcNow.AddSeconds(120)
