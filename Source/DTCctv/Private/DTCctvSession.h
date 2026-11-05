@@ -43,6 +43,7 @@ public:
 
 	/** 표시 대기 중인 가장 오래된 프레임을 가져간다. 없으면 nullptr. */
 	FDTCctvVideoFramePtr TakeFrame(bool bCanCatchUp = false);
+	void NotifyConsumerUnavailable();
 	double GetNominalFps() const { return NominalFps.load(); }
 
 	EDTCctvState GetState() const { return State.load(); }
@@ -131,6 +132,8 @@ private:
 	FIntPoint PreparedFrameSize = FIntPoint::ZeroValue;
 	FDTCctvFrameAgeAccumulator FrameAge;
 	double FrameBacklogSinceSeconds = 0.0;
+	double LastConsumerPollSeconds = 0.0;
+	double LastConsumerTakeSeconds = 0.0;
 	FString CodecName;
 	FString DecoderName;
 };

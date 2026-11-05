@@ -381,7 +381,21 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDTCctvFrameBackpressureTest, "DTCctv.Policies.
 bool FDTCctvFrameBackpressureTest::RunTest(const FString& Parameters)
 {
 	FDTCctvSession Session{ FDTCctvSessionParams() };
+	AVFrame* Prime = av_frame_alloc();
+	if (!TestNotNull(TEXT("실제 소비를 시작할 프레임"), Prime))
+	{
+		return false;
+	}
+	Prime->format = AV_PIX_FMT_YUV420P;
+	Prime->width = Prime->height = 16;
+	if (av_frame_get_buffer(Prime, 32) < 0)
+	{
+		av_frame_free(&Prime);
+		return false;
+	}
+	Session.OutputFrame(Prime);
 	Session.TakeFrame(true);
+	av_frame_free(&Prime);
 	TFuture<bool> Producer = Async(EAsyncExecution::Thread, [&Session]()
 	{
 		AVFrame* Frame = av_frame_alloc();
@@ -431,6 +445,20 @@ bool FDTCctvFrameBackpressureTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("16개 버스트 모두 소비"), Received, 16);
 	TestEqual(TEXT("소비 여유가 있으면 버스트 대체 없음"), Stats.FramesSuperseded, int64(0));
 	TestEqual(TEXT("소비 뒤 대기 메모리 없음"), Stats.QueuedFrameBytes, int64(0));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDTCctvConsumerLeaseTest, "DTCctv.Policies.ConsumerLease", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::SmokeFilter)
+bool FDTCctvConsumerLeaseTest::RunTest(const FString& Parameters)
+{
+	TestTrue(TEXT("정상 소비와 짧은 생산 버스트"), DTCctvShouldBackpressure(10.0, 9.99, 9.98, 9.9, true));
+	TestTrue(TEXT("0.3초 정지 버스트의 보존 여유"), DTCctvShouldBackpressure(10.0, 9.69, 9.69, 9.8, true));
+	TestFalse(TEXT("GT 호출이 멈추면 상태값이참이어도 대기안함"), DTCctvShouldBackpressure(10.0, 9.64, 9.64, 9.9, true));
+	TestFalse(TEXT("빈호출만 있고 실제소비가없으면 대기안함"), DTCctvShouldBackpressure(10.0, 9.99, 9.2, 9.9, true));
+	TestFalse(TEXT("소비를 시작하기 전에는 대기안함"), DTCctvShouldBackpressure(10.0, 9.99, 0.0, 9.9, true));
+	TestFalse(TEXT("렌더정체알림은 즉시 대기해제"), DTCctvShouldBackpressure(10.0, 9.99, 9.98, 9.9, false));
+	TestFalse(TEXT("프레임별 대기기한도 유지"), DTCctvShouldBackpressure(10.0, 9.99, 9.98, 9.2, true));
+	TestFalse(TEXT("역행한 시각은 활성증거가 아님"), DTCctvShouldBackpressure(10.0, 10.1, 9.98, 9.9, true));
 	return true;
 }
 

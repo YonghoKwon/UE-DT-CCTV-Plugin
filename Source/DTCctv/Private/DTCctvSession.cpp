@@ -199,13 +199,14 @@ void FDTCctvSession::RequestStop()
 FDTCctvVideoFramePtr FDTCctvSession::TakeFrame(bool bCanCatchUp)
 {
 	FScopeLock ScopeLock(&Lock);
+	const double Now = NowSeconds();
+	LastConsumerPollSeconds = Now;
 	if (PendingFrames.IsEmpty())
 	{
 		FrameBacklogSinceSeconds = 0.0;
 		bConsumerCanCatchUp.store(bCanCatchUp);
 		return nullptr;
 	}
-	const double Now = NowSeconds();
 	if (PendingFrames.Num() > 1 && FrameBacklogSinceSeconds == 0.0)
 	{
 		FrameBacklogSinceSeconds = Now;
@@ -227,6 +228,7 @@ FDTCctvVideoFramePtr FDTCctvSession::TakeFrame(bool bCanCatchUp)
 		FramesSuperseded.fetch_add(Skip);
 	}
 	FDTCctvVideoFramePtr Frame = PendingFrames[0];
+	LastConsumerTakeSeconds = Now;
 	PendingFrameBytes -= Frame->GetBufferBytes();
 	PendingFrames.RemoveAt(0, 1, false);
 	FrameSpaceEvent->Trigger();
@@ -235,6 +237,12 @@ FDTCctvVideoFramePtr FDTCctvSession::TakeFrame(bool bCanCatchUp)
 		FrameBacklogSinceSeconds = 0.0;
 	}
 	return Frame;
+}
+
+void FDTCctvSession::NotifyConsumerUnavailable()
+{
+	bConsumerCanCatchUp.store(false);
+	FrameSpaceEvent->Trigger();
 }
 
 void FDTCctvSession::SetDesiredOutputSize(FIntPoint Size)
@@ -796,7 +804,7 @@ void FDTCctvSession::OutputFrame(AVFrame* Decoded)
 			const int64 FrameBytes = Frame->GetBufferBytes();
 			const int64 ByteLimit = FMath::Max(MaxPendingFrameBytes, FrameBytes);
 			const bool bFull = PendingFrames.Num() >= MaxPendingFrames || PendingFrameBytes + FrameBytes > ByteLimit;
-			if (!bFull || !bConsumerCanCatchUp.load() || NowSeconds() - WaitStartedSeconds >= 0.75)
+			if (!bFull || !DTCctvShouldBackpressure(NowSeconds(), LastConsumerPollSeconds, LastConsumerTakeSeconds, WaitStartedSeconds, bConsumerCanCatchUp.load()))
 			{
 				while (!PendingFrames.IsEmpty() && (PendingFrames.Num() >= MaxPendingFrames || PendingFrameBytes + FrameBytes > ByteLimit))
 				{

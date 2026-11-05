@@ -249,8 +249,13 @@ void UDTCctvStream::UpdateOutputSize(FIntPoint FrameSize)
 void UDTCctvStream::RenderLatestFrame()
 {
 	// 렌더 스레드는 게임 스레드보다 보통 한 프레임 늦으므로 1건 대기는 정상이다. 그 이상 밀릴 때만 건너뛴다.
-	if (!Session.IsValid() || Texture == nullptr || RenderInFlight->load() >= MaxRenderCommandsInFlight)
+	if (!Session.IsValid())
 	{
+		return;
+	}
+	if (Texture == nullptr || RenderInFlight->load() >= MaxRenderCommandsInFlight)
+	{
+		Session->NotifyConsumerUnavailable();
 		return;
 	}
 
@@ -282,6 +287,7 @@ void UDTCctvStream::RenderLatestFrame()
 	FTextureRenderTargetResource* Resource = Texture->GameThread_GetRenderTargetResource();
 	if (Resource == nullptr)
 	{
+		Session->NotifyConsumerUnavailable();
 		return;
 	}
 

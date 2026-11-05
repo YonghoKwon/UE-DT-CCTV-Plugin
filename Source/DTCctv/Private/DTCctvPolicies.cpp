@@ -81,6 +81,15 @@ bool DTCctvCanCatchUp(double TickSeconds, double SourceFps)
 	return TickSeconds > 0.0 && SourceFps > 0.0 && 1.0 / TickSeconds >= SourceFps * 1.25;
 }
 
+bool DTCctvShouldBackpressure(double NowSeconds, double LastPollSeconds, double LastTakeSeconds, double WaitStartedSeconds, bool bCanCatchUp)
+{
+	return bCanCatchUp && LastPollSeconds > 0.0 && LastTakeSeconds > 0.0
+		&& NowSeconds >= LastPollSeconds && NowSeconds >= LastTakeSeconds && NowSeconds >= WaitStartedSeconds
+		&& NowSeconds - LastPollSeconds < 0.35
+		&& NowSeconds - LastTakeSeconds < 0.75
+		&& NowSeconds - WaitStartedSeconds < 0.75;
+}
+
 int32 DTCctvChooseStaleFrameSkip(TConstArrayView<double> FrameAgesSeconds, double BacklogSeconds, bool bCanCatchUp)
 {
 	if (bCanCatchUp && BacklogSeconds < 0.75)

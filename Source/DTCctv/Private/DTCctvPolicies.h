@@ -24,6 +24,9 @@ void DTCctvClearFrameAgeStats(FDTCctvStreamStats& Stats);
 
 bool DTCctvCanCatchUp(double TickSeconds, double SourceFps);
 
+/** 호출은350ms, 실제 소비는750ms 안에 있었고 현재 프레임 대기도750ms 미만일 때만 역압을 허용한다. */
+bool DTCctvShouldBackpressure(double NowSeconds, double LastPollSeconds, double LastTakeSeconds, double WaitStartedSeconds, bool bCanCatchUp);
+
 /** 소비 여유가 있으면750ms까지 버스트를 보존하고, 나머지는 지속 대기·age로40ms 안쪽까지 따라잡는다. */
 int32 DTCctvChooseStaleFrameSkip(TConstArrayView<double> FrameAgesSeconds, double BacklogSeconds, bool bCanCatchUp = false);
 
