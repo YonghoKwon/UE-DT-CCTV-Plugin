@@ -71,6 +71,9 @@ function Start-DTCctvOwnedProcess
 	$Owned.Add($entry)
 	$null = $process.Handle
 	$entry.Started = $process.StartTime.ToUniversalTime()
+	Write-DTCctvJson -Path "$LogPrefix.process.json" -Value @{
+		pid = $entry.Id; started_utc = $entry.Started.ToString('o'); path = $entry.Path
+	}
 	return $entry
 }
 
