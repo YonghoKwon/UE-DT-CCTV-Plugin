@@ -5,6 +5,7 @@
 #include "DTCctvFFmpegInclude.h"
 #include "DTCctvPacketQueue.h"
 #include "DTCctvPolicies.h"
+#include "DTCctvVideoFrame.h"
 #include "DTCctvYuvRenderer.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDTCctvMaskUrlTest, "DTCctv.Policies.MaskUrl", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::SmokeFilter)
@@ -123,6 +124,25 @@ bool FDTCctvColorTest::RunTest(const FString& Parameters)
 	// BT.601 전체 범위 순수 파랑: Y=29, Cb=255, Cr=107
 	Rgb = Apply(Full601, 29.f / 255.f, 1.f, 107.f / 255.f);
 	TestTrue(TEXT("BT.601 파랑"), Rgb.Equals(FVector3f(0.f, 0.f, 1.f), 0.02f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDTCctvFrameMetadataTest, "DTCctv.Policies.FrameMetadata", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::SmokeFilter)
+bool FDTCctvFrameMetadataTest::RunTest(const FString& Parameters)
+{
+	AVFrame* Frame = av_frame_alloc();
+	if (!TestNotNull(TEXT("프레임 할당"), Frame))
+	{
+		return false;
+	}
+	Frame->format = AV_PIX_FMT_YUV420P;
+	Frame->width = 480;
+	Frame->height = 270;
+	Frame->colorspace = AVCOL_SPC_UNSPECIFIED;
+	const FDTCctvVideoFrame VideoFrame(Frame, FIntPoint(1920, 1080));
+	TestTrue(TEXT("축소 프레임도 원본 크기 보존"), VideoFrame.GetSourceSize() == FIntPoint(1920, 1080));
+	const FDTCctvColorTransform Expected = DTCctvMakeColorTransform(EDTCctvYuvMatrix::Bt709, false);
+	TestTrue(TEXT("색 공간 미지정 HD 원본은 축소 후에도 BT.709"), VideoFrame.GetPlanes().Transform.RowR.Equals(Expected.RowR, 0.0001f));
 	return true;
 }
 

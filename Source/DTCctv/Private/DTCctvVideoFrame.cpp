@@ -2,8 +2,9 @@
 
 #include "DTCctvFFmpegInclude.h"
 
-FDTCctvVideoFrame::FDTCctvVideoFrame(AVFrame* InFrame)
+FDTCctvVideoFrame::FDTCctvVideoFrame(AVFrame* InFrame, FIntPoint InSourceSize)
 	: Frame(InFrame)
+	, SourceSize(InSourceSize)
 {
 }
 
@@ -45,7 +46,7 @@ FDTCctvYuvPlanes FDTCctvVideoFrame::GetPlanes() const
 		break;
 	default:
 		// 스트림에 정보가 없으면 해상도로 추정한다.
-		Matrix = Frame->height >= 720 ? EDTCctvYuvMatrix::Bt709 : EDTCctvYuvMatrix::Bt601;
+		Matrix = SourceSize.Y >= 720 ? EDTCctvYuvMatrix::Bt709 : EDTCctvYuvMatrix::Bt601;
 		break;
 	}
 

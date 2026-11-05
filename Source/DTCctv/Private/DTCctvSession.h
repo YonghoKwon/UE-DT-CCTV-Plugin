@@ -45,7 +45,7 @@ public:
 
 	EDTCctvState GetState() const { return State.load(); }
 	bool HasDecodedFrame() const { return FramesDecoded.load() > 0; }
-	FIntPoint GetSourceSize() const { return FIntPoint(FrameWidth.load(), FrameHeight.load()); }
+	FIntPoint GetSourceSize() const;
 
 	/** 표시에 필요한 크기를 알린다. 원본의 절반 이하이면 업로드 전에 줄여 GPU 부하를 낮춘다. */
 	void SetDesiredOutputSize(FIntPoint Size);
@@ -106,12 +106,10 @@ private:
 	std::atomic<int64> FramesSuperseded{ 0 };
 	std::atomic<int64> DecodeErrors{ 0 };
 	std::atomic<int32> Reconnects{ 0 };
-	std::atomic<int32> FrameWidth{ 0 };
-	std::atomic<int32> FrameHeight{ 0 };
-	std::atomic<int32> DesiredWidth{ 0 };
-	std::atomic<int32> DesiredHeight{ 0 };
 
 	mutable FCriticalSection Lock;
+	FIntPoint SourceSize = FIntPoint::ZeroValue;
+	FIntPoint DesiredOutputSize = FIntPoint::ZeroValue;
 	TArray<FDTCctvVideoFramePtr, TInlineAllocator<4>> PendingFrames;
 	FString CodecName;
 	FString DecoderName;

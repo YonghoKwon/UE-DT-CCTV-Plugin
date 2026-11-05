@@ -10,17 +10,19 @@ class FDTCctvVideoFrame
 {
 public:
 	/** Frame의 소유권을 가져온다. */
-	explicit FDTCctvVideoFrame(AVFrame* InFrame);
+	FDTCctvVideoFrame(AVFrame* InFrame, FIntPoint InSourceSize);
 	~FDTCctvVideoFrame();
 
 	FDTCctvVideoFrame(const FDTCctvVideoFrame&) = delete;
 	FDTCctvVideoFrame& operator=(const FDTCctvVideoFrame&) = delete;
 
 	FIntPoint GetSize() const;
+	FIntPoint GetSourceSize() const { return SourceSize; }
 	FDTCctvYuvPlanes GetPlanes() const;
 
 private:
 	AVFrame* Frame;
+	const FIntPoint SourceSize;
 };
 
 using FDTCctvVideoFramePtr = TSharedPtr<FDTCctvVideoFrame, ESPMode::ThreadSafe>;

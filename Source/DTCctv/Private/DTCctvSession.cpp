@@ -178,6 +178,13 @@ void FDTCctvSession::Start()
 {
 	ReaderWorker = MakeUnique<FWorker>([this]() { ReaderMain(); });
 	ReaderThread.Reset(FRunnableThread::Create(ReaderWorker.Get(), TEXT("DTCctvRead")));
+	if (!ReaderThread.IsValid())
+	{
+		ReaderWorker.Reset();
+		RequestStop();
+		bFinished.store(true);
+		UE_LOG(LogDTCctv, Error, TEXT("읽기 스레드를 시작하지 못했습니다: %s"), *DTCctvMaskUrlCredentials(Params.Url));
+	}
 }
 
 void FDTCctvSession::RequestStop()
@@ -201,14 +208,19 @@ FDTCctvVideoFramePtr FDTCctvSession::TakeFrame()
 
 void FDTCctvSession::SetDesiredOutputSize(FIntPoint Size)
 {
-	DesiredWidth.store(Size.X);
-	DesiredHeight.store(Size.Y);
+	FScopeLock ScopeLock(&Lock);
+	DesiredOutputSize = Size;
+}
+
+FIntPoint FDTCctvSession::GetSourceSize() const
+{
+	FScopeLock ScopeLock(&Lock);
+	return SourceSize;
 }
 
 void FDTCctvSession::FillStats(FDTCctvStreamStats& Stats) const
 {
 	Stats.State = State.load();
-	Stats.SourceSize = FIntPoint(FrameWidth.load(), FrameHeight.load());
 	Stats.PacketsReceived = PacketsReceived.load();
 	Stats.FramesDecoded = FramesDecoded.load();
 	Stats.FramesSuperseded = FramesSuperseded.load();
@@ -218,6 +230,7 @@ void FDTCctvSession::FillStats(FDTCctvStreamStats& Stats) const
 	Stats.QueuedPackets = Queue.Num();
 
 	FScopeLock ScopeLock(&Lock);
+	Stats.SourceSize = SourceSize;
 	Stats.CodecName = CodecName;
 	Stats.DecoderName = DecoderName;
 }
@@ -306,7 +319,14 @@ void FDTCctvSession::ReaderMain()
 			DecoderWorker = MakeUnique<FWorker>([this]() { DecoderMain(); });
 			DecoderThread.Reset(FRunnableThread::Create(DecoderWorker.Get(), TEXT("DTCctvDecode")));
 
-			ReadLoop();
+			if (DecoderThread.IsValid())
+			{
+				ReadLoop();
+			}
+			else
+			{
+				UE_LOG(LogDTCctv, Error, TEXT("디코딩 스레드를 시작하지 못했습니다: %s"), *SafeUrl);
+			}
 
 			Queue.Abort();
 			DecoderThread.Reset();
@@ -651,18 +671,19 @@ void FDTCctvSession::OutputFrame(AVFrame* Decoded)
 		}
 	}
 
-	FrameWidth.store(Output->width);
-	FrameHeight.store(Output->height);
-
-	const int32 WantedWidth = DesiredWidth.load();
-	const int32 WantedHeight = DesiredHeight.load();
-	const bool bDownscale = WantedWidth > 0 && WantedHeight > 0 && WantedWidth * 2 <= Output->width && WantedHeight * 2 <= Output->height;
+	const FIntPoint FrameSourceSize(Output->width, Output->height);
+	FIntPoint WantedSize;
+	{
+		FScopeLock ScopeLock(&Lock);
+		WantedSize = DesiredOutputSize;
+	}
+	const bool bDownscale = WantedSize.X > 0 && WantedSize.Y > 0 && WantedSize.X <= Output->width / 2 && WantedSize.Y <= Output->height / 2;
 
 	if (bDownscale || !IsDirectlyRenderable(Output->format))
 	{
 		// 축소가 필요하거나, 10비트·4:2:2처럼 셰이더가 다루지 않는 형식이면 NV12로 변환한다.
-		const int32 TargetWidth = bDownscale ? WantedWidth : Output->width;
-		const int32 TargetHeight = bDownscale ? WantedHeight : Output->height;
+		const int32 TargetWidth = bDownscale ? WantedSize.X : Output->width;
+		const int32 TargetHeight = bDownscale ? WantedSize.Y : Output->height;
 		AVFrame* Converted = av_frame_alloc();
 		ScaleContext = sws_getCachedContext(ScaleContext,
 			Output->width, Output->height, static_cast<AVPixelFormat>(Output->format),
@@ -676,8 +697,7 @@ void FDTCctvSession::OutputFrame(AVFrame* Decoded)
 			Converted->height = TargetHeight;
 			if (av_frame_get_buffer(Converted, 0) >= 0 && av_frame_copy_props(Converted, Output) >= 0)
 			{
-				sws_scale(ScaleContext, Output->data, Output->linesize, 0, Output->height, Converted->data, Converted->linesize);
-				bConverted = true;
+				bConverted = sws_scale(ScaleContext, Output->data, Output->linesize, 0, Output->height, Converted->data, Converted->linesize) == TargetHeight;
 			}
 		}
 		av_frame_free(&Output);
@@ -690,9 +710,10 @@ void FDTCctvSession::OutputFrame(AVFrame* Decoded)
 		Output = Converted;
 	}
 
-	const FDTCctvVideoFramePtr Frame = MakeShared<FDTCctvVideoFrame, ESPMode::ThreadSafe>(Output);
+	const FDTCctvVideoFramePtr Frame = MakeShared<FDTCctvVideoFrame, ESPMode::ThreadSafe>(Output, FrameSourceSize);
 	{
 		FScopeLock ScopeLock(&Lock);
+		SourceSize = FrameSourceSize;
 		if (PendingFrames.Num() >= MaxPendingFrames)
 		{
 			FramesSuperseded.fetch_add(1);

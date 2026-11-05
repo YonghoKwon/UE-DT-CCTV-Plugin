@@ -251,11 +251,10 @@ void UDTCctvStream::RenderLatestFrame()
 	// -nullrhi처럼 렌더링이 없는 실행에서는 디코딩만 하고 텍스처를 건드리지 않는다.
 	if (!FApp::CanEverRender())
 	{
-		++FramesDisplayed;
 		return;
 	}
 
-	UpdateOutputSize(Session->GetSourceSize());
+	UpdateOutputSize(Frame->GetSourceSize());
 	Session->SetDesiredOutputSize(OutputSize);
 	if (PendingSession.IsValid())
 	{
