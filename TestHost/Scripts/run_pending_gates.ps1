@@ -72,7 +72,7 @@ function Invoke-DTCctvBuild
 
 function Invoke-DTCctvWindowsCase
 {
-	param([string]$Tag, [int]$Fps = 60, [int]$Seconds = 80, [string]$Extra = '', [switch]$SubStream, [switch]$ValidateRendering, [switch]$Windowed, [int]$GameFps = 144, [double]$ResourceIntervalSeconds = 5.0, [double]$ThreadModuleIntervalSeconds = 0.0, [switch]$SkipScreenshot)
+	param([string]$Tag, [int]$Fps = 60, [int]$Seconds = 80, [string]$Extra = '', [switch]$SubStream, [switch]$ValidateRendering, [switch]$Windowed, [int]$GameFps = 144, [double]$ResourceIntervalSeconds = 5.0, [double]$ThreadModuleIntervalSeconds = 0.0, [double]$HandleSnapshotIntervalSeconds = 0.0, [switch]$SkipScreenshot)
 	Assert-DTCctvIdle
 	$case = Join-Path $run $Tag
 	New-Item -ItemType Directory -Path $case | Out-Null
@@ -99,6 +99,12 @@ function Invoke-DTCctvWindowsCase
 			$python = (Get-Command python -ErrorAction Stop).Source
 			$observerArgs = '"' + $repo + '\TestHost\Scripts\collect_thread_modules.py" "' + $logs + '\' + $Tag + '.game.process.json" "' + $logs + '\' + $Tag + '.thread-modules.jsonl" --interval ' + $ThreadModuleIntervalSeconds
 			$null = Start-DTCctvOwnedProcess -File $python -Arguments $observerArgs -WorkingDirectory $repo -LogPrefix "$logs\$Tag.observer" -Owned $owned
+		}
+		if ($HandleSnapshotIntervalSeconds -gt 0)
+		{
+			$python = (Get-Command python -ErrorAction Stop).Source
+			$handleArgs = '"' + $repo + '\TestHost\Scripts\collect_handles.py" "' + $logs + '\' + $Tag + '.game.process.json" "' + $logs + '\' + $Tag + '.handles.jsonl" --interval ' + $HandleSnapshotIntervalSeconds
+			$null = Start-DTCctvOwnedProcess -File $python -Arguments $handleArgs -WorkingDirectory $repo -LogPrefix "$logs\$Tag.handles-observer" -Owned $owned
 		}
 		$deadline = [datetime]::UtcNow.AddSeconds($Seconds + 90)
 		while (-not $game.Process.WaitForExit([math]::Max(100, [int]($ResourceIntervalSeconds * 1000))))
