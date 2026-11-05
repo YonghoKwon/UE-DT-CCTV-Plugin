@@ -197,10 +197,31 @@ FDTCctvVideoFramePtr FDTCctvSession::TakeFrame()
 	FScopeLock ScopeLock(&Lock);
 	if (PendingFrames.IsEmpty())
 	{
+		FrameBacklogSinceSeconds = 0.0;
 		return nullptr;
+	}
+	const double Now = NowSeconds();
+	if (PendingFrames.Num() > 1 && FrameBacklogSinceSeconds == 0.0)
+	{
+		FrameBacklogSinceSeconds = Now;
+	}
+	TArray<double, TInlineAllocator<8>> Ages;
+	for (const FDTCctvVideoFramePtr& Pending : PendingFrames)
+	{
+		Ages.Add(FMath::Max(0.0, Now - Pending->GetDecodedSeconds()));
+	}
+	const int32 Skip = DTCctvChooseStaleFrameSkip(Ages, FrameBacklogSinceSeconds > 0.0 ? Now - FrameBacklogSinceSeconds : 0.0);
+	if (Skip > 0)
+	{
+		PendingFrames.RemoveAt(0, Skip, false);
+		FramesSuperseded.fetch_add(Skip);
 	}
 	FDTCctvVideoFramePtr Frame = PendingFrames[0];
 	PendingFrames.RemoveAt(0, 1, false);
+	if (PendingFrames.IsEmpty())
+	{
+		FrameBacklogSinceSeconds = 0.0;
+	}
 	return Frame;
 }
 

@@ -22,6 +22,9 @@ private:
 void DTCctvMergeFrameAgeStats(FDTCctvStreamStats& Total, const FDTCctvStreamStats& Stats);
 void DTCctvClearFrameAgeStats(FDTCctvStreamStats& Stats);
 
+/** 짧은 버스트는 보존하되, 100ms 이상 지속된 대기 또는 100ms 초과 age는 40ms 안쪽으로 따라잡는다. */
+int32 DTCctvChooseStaleFrameSkip(TConstArrayView<double> FrameAgesSeconds, double BacklogSeconds);
+
 /** 로그에 남기기 전에 URL의 계정 정보를 가린다. */
 FString DTCctvMaskUrlCredentials(const FString& Text);
 

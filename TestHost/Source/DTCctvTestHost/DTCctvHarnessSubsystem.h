@@ -23,6 +23,7 @@ class UDTCctvHarnessRootWidget : public UUserWidget
  * -CctvResizeScenario=drag|extremes|subset|disconnected -CctvSubUrl=주소
  * -CctvResizePeriod=12 -CctvResizeAffected=4 -CctvShotEvery=1
  * -CctvCloseOpenCycles=5 -CctvCloseOpenInterval=10 -CctvCloseHold=2
+ * -CctvStallAt=30 -CctvStallSeconds=2
  */
 UCLASS()
 class UDTCctvHarnessSubsystem : public UGameInstanceSubsystem, public FTickableGameObject
@@ -51,6 +52,9 @@ private:
 	bool bShotTaken = false;
 	bool bSoftware = false;
 	bool bFrameAgeWarmupReset = false;
+	bool bStallDone = false;
+	double StallAtSeconds = 0.0;
+	double StallSeconds = 2.0;
 	FString Url;
 	FString SubUrl;
 	FString CsvPath;

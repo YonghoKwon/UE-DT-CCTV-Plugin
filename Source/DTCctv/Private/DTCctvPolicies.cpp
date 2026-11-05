@@ -76,6 +76,20 @@ void DTCctvClearFrameAgeStats(FDTCctvStreamStats& Stats)
 	Stats.FrameAgeHistogram.Reset();
 }
 
+int32 DTCctvChooseStaleFrameSkip(TConstArrayView<double> FrameAgesSeconds, double BacklogSeconds)
+{
+	if (FrameAgesSeconds.Num() < 2 || (BacklogSeconds < 0.1 && FrameAgesSeconds[0] <= 0.1))
+	{
+		return 0;
+	}
+	int32 Skip = 0;
+	while (Skip < FrameAgesSeconds.Num() - 1 && FrameAgesSeconds[Skip] > 0.04)
+	{
+		++Skip;
+	}
+	return Skip;
+}
+
 FString DTCctvMaskUrlCredentials(const FString& Text)
 {
 	FString Result = Text;

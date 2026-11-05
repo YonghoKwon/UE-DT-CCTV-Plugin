@@ -11,6 +11,7 @@
 #include "HAL/FileManager.h"
 #include "HAL/PlatformMemory.h"
 #include "HAL/PlatformMisc.h"
+#include "HAL/PlatformProcess.h"
 #include "HAL/PlatformTime.h"
 #include "Misc/App.h"
 #include "Misc/CommandLine.h"
@@ -104,6 +105,9 @@ void UDTCctvHarnessSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	FParse::Value(CommandLine, TEXT("-CctvCloseOpenCycles="), CloseOpenCycles);
 	FParse::Value(CommandLine, TEXT("-CctvCloseOpenInterval="), CloseOpenInterval);
 	FParse::Value(CommandLine, TEXT("-CctvCloseHold="), CloseHoldSeconds);
+	FParse::Value(CommandLine, TEXT("-CctvStallAt="), StallAtSeconds);
+	FParse::Value(CommandLine, TEXT("-CctvStallSeconds="), StallSeconds);
+	StallSeconds = FMath::Clamp(StallSeconds, 0.0, 10.0);
 	bSoftware = FParse::Param(CommandLine, TEXT("CctvSoftware"));
 	Count = FMath::Clamp(Count, 1, 64);
 	ResizeAffected = FMath::Clamp(ResizeAffected, 1, Count);
@@ -374,7 +378,16 @@ void UDTCctvHarnessSubsystem::Tick(float DeltaTime)
 		return;
 	}
 
-	const double Elapsed = FPlatformTime::Seconds() - StartSeconds;
+	double Elapsed = FPlatformTime::Seconds() - StartSeconds;
+	if (!bStallDone && StallAtSeconds > 0.0 && Elapsed >= StallAtSeconds)
+	{
+		bStallDone = true;
+		WriteEvent(TEXT("stall-begin"), Elapsed);
+		// 시험 전용으로 게임 틱만 멈춘다. 수신·디코딩 스레드는 계속 진행한다.
+		FPlatformProcess::SleepNoStats(StallSeconds);
+		Elapsed = FPlatformTime::Seconds() - StartSeconds;
+		WriteEvent(TEXT("stall-end"), Elapsed);
+	}
 	if (!bFrameAgeWarmupReset && Elapsed >= 10.0)
 	{
 		for (int32 Index = 0; Index < Views.Num(); ++Index)

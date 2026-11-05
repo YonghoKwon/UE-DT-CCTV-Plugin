@@ -278,4 +278,22 @@ bool FDTCctvFrameAgeTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDTCctvLatencyPolicyTest, "DTCctv.Policies.LatencyBound", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::SmokeFilter)
+bool FDTCctvLatencyPolicyTest::RunTest(const FString& Parameters)
+{
+	const double Burst[] = { 0.055, 0.040, 0.025, 0.010 };
+	TestEqual(TEXT("짧은 버스트 순서 보존"), DTCctvChooseStaleFrameSkip(Burst, 0.02), 0);
+	const double Persistent[] = { 0.085, 0.068, 0.051, 0.034, 0.017 };
+	TestEqual(TEXT("지속 대기는40ms 안쪽까지 따라잡음"), DTCctvChooseStaleFrameSkip(Persistent, 0.1), 3);
+	const double Stalled[] = { 0.132, 0.115, 0.098, 0.081, 0.064, 0.047, 0.030, 0.013 };
+	TestEqual(TEXT("정지 뒤에는 지속 시간 전에도 age 상한 적용"), DTCctvChooseStaleFrameSkip(Stalled, 0.0), 6);
+	const double Fresh[] = { 0.025, 0.008 };
+	TestEqual(TEXT("오래 지속돼도 신선한 프레임은 보존"), DTCctvChooseStaleFrameSkip(Fresh, 1.0), 0);
+	const double Only[] = { 2.0 };
+	TestEqual(TEXT("새 프레임 없는 경우 마지막 표본을 숨기지 않음"), DTCctvChooseStaleFrameSkip(Only, 1.0), 0);
+	const double Boundary[] = { 0.040, 0.024 };
+	TestEqual(TEXT("40ms 경계 보존"), DTCctvChooseStaleFrameSkip(Boundary, 1.0), 0);
+	return true;
+}
+
 #endif

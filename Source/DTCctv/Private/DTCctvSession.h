@@ -120,6 +120,7 @@ private:
 	TArray<FDTCctvVideoFramePtr, TInlineAllocator<8>> PendingFrames;
 	int32 PeakQueuedFrames = 0;
 	FDTCctvFrameAgeAccumulator FrameAge;
+	double FrameBacklogSinceSeconds = 0.0;
 	FString CodecName;
 	FString DecoderName;
 };
