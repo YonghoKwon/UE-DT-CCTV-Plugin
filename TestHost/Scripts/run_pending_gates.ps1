@@ -67,7 +67,7 @@ function Invoke-DTCctvBuild
 
 function Invoke-DTCctvWindowsCase
 {
-	param([string]$Tag, [int]$Fps = 60, [int]$Seconds = 80, [string]$Extra = '', [switch]$SubStream)
+	param([string]$Tag, [int]$Fps = 60, [int]$Seconds = 80, [string]$Extra = '', [switch]$SubStream, [switch]$ValidateRendering)
 	Assert-DTCctvIdle
 	$case = Join-Path $run $Tag
 	New-Item -ItemType Directory -Path $case | Out-Null
@@ -81,7 +81,7 @@ function Invoke-DTCctvWindowsCase
 			$null = Start-DTCctvSource -Tools $Tools -FFmpeg $FFmpeg -Out $logs -Tag "$Tag-sub" -Fps $Fps -Path sub -Width 640 -Height 360 -PublisherOnly -ServerLogPrefix $source.ServerLogPrefix -Owned $owned
 			$Extra += ' -CctvSubUrl=rtsp://127.0.0.1:8554/sub'
 		}
-		$argsLine = '-windowed -ResX=1920 -ResY=1080 -unattended -nosplash -nosound -CctvUrl=rtsp://127.0.0.1:8554/cam -CctvCount=16 -CctvSeconds=' + $Seconds + ' -CctvCsv="' + $case + '\samples.csv" -CctvShot="' + $case + '\final.png" -ExecCmds="r.VSync 0,t.MaxFPS 144" -abslog="' + $logs + '\' + $Tag + '.game.log" ' + $Extra
+		$argsLine = '-RenderOffScreen -windowed -ResX=1920 -ResY=1080 -unattended -nosplash -nosound -CctvUrl=rtsp://127.0.0.1:8554/cam -CctvCount=16 -CctvSeconds=' + $Seconds + ' -CctvCsv="' + $case + '\samples.csv" -CctvShot="' + $case + '\final.png" -ExecCmds="r.VSync 0,t.MaxFPS 144" -abslog="' + $logs + '\' + $Tag + '.game.log" ' + $Extra
 		$game = Start-DTCctvOwnedProcess -File $winExe -Arguments $argsLine -WorkingDirectory (Split-Path $winExe) -LogPrefix "$logs\$Tag.game" -Owned $owned
 		$deadline = [datetime]::UtcNow.AddSeconds($Seconds + 90)
 		while (-not $game.Process.WaitForExit(5000))
@@ -91,9 +91,21 @@ function Invoke-DTCctvWindowsCase
 		}
 		$summary['exit_code'] = $game.Process.ExitCode
 		if ($game.Process.ExitCode -ne 0) { throw '패키지 실행 실패.' }
+		if ($ValidateRendering)
+		{
+			$summary['render_validation'] = [ordered]@{ valid = $false; output_w_positive = $false; screenshot = $null }
+		}
 		$rows = @(Import-Csv -LiteralPath "$case\samples.csv")
 		$steady = @($rows | Where-Object { [double]$_.t -ge 10 })
 		if ($steady.Count -lt 2) { throw '충분한 측정 CSV가 없습니다.' }
+		if ($ValidateRendering)
+		{
+			$summary.render_validation.output_w_positive = @($steady | Where-Object { [int]$_.output_w -le 0 }).Count -eq 0
+			if (-not $summary.render_validation.output_w_positive) { throw '첫 Windows 측정의 output_w가 0이므로 측정을 무효로 기록합니다.' }
+			$summary.render_validation.screenshot = Get-DTCctvScreenshotCheck -Path "$case\final.png"
+			if (-not $summary.render_validation.screenshot.non_black) { throw '첫 Windows 측정의 PNG가 검은 화면이므로 측정을 무효로 기록합니다.' }
+			$summary.render_validation.valid = $true
+		}
 		$secondsMeasured = [double]$steady[-1].t - [double]$steady[0].t
 		$summary['seconds'] = $secondsMeasured
 		$summary['decode_fps'] = ([long]$steady[-1].decoded - [long]$steady[0].decoded) / (16 * $secondsMeasured)
@@ -109,7 +121,14 @@ function Invoke-DTCctvWindowsCase
 		})
 		$summary.status = 'MEASURED'
 	}
-	catch { $summary.note = $_.Exception.Message }
+	catch
+	{
+		$summary.note = $_.Exception.Message
+		if ($ValidateRendering -and $summary.Contains('render_validation') -and -not $summary.render_validation.valid)
+		{
+			$summary.status = 'INVALID'
+		}
+	}
 	finally
 	{
 		try { Close-DTCctvOwnedProcesses $owned }
@@ -179,10 +198,13 @@ try
 {
 	# CCTV-01A의 C++ 변경을 포함하도록 3번 패키징을 다시 수행하는 선행 조건이다.
 	Invoke-DTCctvBuild
-	$results['4_win60'] = Invoke-DTCctvWindowsCase -Tag win60
+	$results['4_win60'] = Invoke-DTCctvWindowsCase -Tag win60 -ValidateRendering
 	$win60 = $results['4_win60']
 	$win60['gate'] = 'package_win_16ch'
-	$win60.status = if ($win60.status -eq 'MEASURED' -and $win60.seconds -ge 60 -and $win60.decode_fps -ge 58 -and $win60.display_fps -ge 58 -and $win60.dropped -eq 0 -and $win60.reconnects -eq 0 -and $win60.all_playing) { 'PASS' } else { 'FAIL' }
+	if ($win60.status -ne 'INVALID')
+	{
+		$win60.status = if ($win60.status -eq 'MEASURED' -and $win60.seconds -ge 60 -and $win60.decode_fps -ge 58 -and $win60.display_fps -ge 58 -and $win60.dropped -eq 0 -and $win60.reconnects -eq 0 -and $win60.all_playing) { 'PASS' } else { 'FAIL' }
+	}
 	$results['4_win30'] = Invoke-DTCctvWindowsCase -Tag win30 -Fps 30
 	$results['5_linux_gpu'] = Invoke-DTCctvLinuxCase -Tag linux-gpu -Gpu
 	$linuxRendering = $results['5_linux_gpu'].status -eq 'PASS'

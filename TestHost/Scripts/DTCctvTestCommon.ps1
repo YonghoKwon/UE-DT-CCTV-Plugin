@@ -34,8 +34,15 @@ function Start-DTCctvOwnedProcess
 	param([string]$File, [string]$Arguments, [string]$WorkingDirectory, [string]$LogPrefix,
 		[System.Collections.Generic.List[object]]$Owned)
 	$resolved = (Resolve-Path -LiteralPath $File -ErrorAction Stop).Path
-	$process = Start-Process -FilePath $resolved -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory `
-		-WindowStyle Hidden -RedirectStandardOutput "$LogPrefix.stdout.log" -RedirectStandardError "$LogPrefix.stderr.log" -PassThru
+	$launch = @{
+		FilePath = $resolved; ArgumentList = $Arguments; WorkingDirectory = $WorkingDirectory
+		RedirectStandardOutput = "$LogPrefix.stdout.log"; RedirectStandardError = "$LogPrefix.stderr.log"; PassThru = $true
+	}
+	if ([IO.Path]::GetFileNameWithoutExtension($resolved) -in @('mediamtx', 'ffmpeg'))
+	{
+		$launch['WindowStyle'] = 'Hidden'
+	}
+	$process = Start-Process @launch
 	# 원래 프로세스의 핸들과 생성 시각을 보관해 PID 재사용으로 다른 작업을 종료하지 않는다.
 	$entry = [pscustomobject]@{ Process = $process; Id = $process.Id; Started = $null; Path = $resolved }
 	$Owned.Add($entry)
@@ -76,6 +83,35 @@ function Write-DTCctvJson
 	param([string]$Path, $Value)
 	$json = $Value | ConvertTo-Json -Depth 12
 	[System.IO.File]::WriteAllText($Path, $json, [System.Text.UTF8Encoding]::new($false))
+}
+
+function Get-DTCctvScreenshotCheck
+{
+	param([string]$Path)
+	# 게임 종료 뒤 PNG를 읽는다. GPU나 외부 프로그램을 실행하지 않는다.
+	Add-Type -AssemblyName System.Drawing
+	$image = [System.Drawing.Bitmap]::new($Path)
+	try
+	{
+		$stepX = [math]::Max(1, [int][math]::Floor($image.Width / 64))
+		$stepY = [math]::Max(1, [int][math]::Floor($image.Height / 64))
+		$samples = 0
+		$nonBlack = 0
+		for ($y = 0; $y -lt $image.Height; $y += $stepY)
+		{
+			for ($x = 0; $x -lt $image.Width; $x += $stepX)
+			{
+				$pixel = $image.GetPixel($x, $y)
+				++$samples
+				if ($pixel.R -ne 0 -or $pixel.G -ne 0 -or $pixel.B -ne 0) { ++$nonBlack }
+			}
+		}
+		return [pscustomobject]@{
+			path = $Path; width = $image.Width; height = $image.Height
+			sampled_pixels = $samples; non_black_pixels = $nonBlack; non_black = $nonBlack -gt 0
+		}
+	}
+	finally { $image.Dispose() }
 }
 
 function Get-DTCctvChannelSample

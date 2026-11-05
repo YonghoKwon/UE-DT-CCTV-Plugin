@@ -35,7 +35,7 @@ try
 	$source = Start-DTCctvSource -Tools $Tools -FFmpeg $FFmpeg -Out $run -Tag 'before' -Owned $owned
 	$prefix = if ([IO.Path]::GetFileName($Executable) -like 'UnrealEditor*') { '"' + $project + '" -game ' } else { '' }
 	$duration = 90 + $OutageSeconds
-	$arguments = $prefix + '-windowed -ResX=1920 -ResY=1080 -unattended -nosplash -nosound -CctvUrl=rtsp://127.0.0.1:8554/cam -CctvCount=' + $Count + ' -CctvSeconds=' + $duration + ' -CctvCsv="' + $csv + '" -ExecCmds="r.VSync 0,t.MaxFPS 144" -abslog="' + $run + '\game.log"'
+	$arguments = $prefix + '-RenderOffScreen -windowed -ResX=1920 -ResY=1080 -unattended -nosplash -nosound -CctvUrl=rtsp://127.0.0.1:8554/cam -CctvCount=' + $Count + ' -CctvSeconds=' + $duration + ' -CctvCsv="' + $csv + '" -ExecCmds="r.VSync 0,t.MaxFPS 144" -abslog="' + $run + '\game.log"'
 	if ($ResizeScenario)
 	{
 		$arguments += ' -CctvResizeScenario=disconnected -CctvResizeAffected=4 -CctvShotEvery=0.5 -CctvShot="' + $run + '\disconnected.png"'
