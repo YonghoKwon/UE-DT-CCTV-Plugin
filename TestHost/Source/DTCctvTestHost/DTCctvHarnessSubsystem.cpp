@@ -40,7 +40,16 @@ void UDTCctvHarnessSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	Super::Initialize(Collection);
 
 	const TCHAR* CommandLine = FCommandLine::Get();
-	bEnabled = FParse::Value(CommandLine, TEXT("-CctvUrl="), Url);
+	FString UrlEnvironment;
+	if (FParse::Value(CommandLine, TEXT("-CctvUrlEnv="), UrlEnvironment))
+	{
+		Url = FPlatformMisc::GetEnvironmentVariable(*UrlEnvironment);
+		bEnabled = !Url.IsEmpty();
+	}
+	else
+	{
+		bEnabled = FParse::Value(CommandLine, TEXT("-CctvUrl="), Url);
+	}
 	if (!bEnabled)
 	{
 		return;
