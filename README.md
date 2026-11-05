@@ -2,7 +2,7 @@
 
 UE 5.3 프로젝트에서 RTSP CCTV를 표시하는 Windows·Linux용 C++ 플러그인입니다. DTCore나 운영 프로젝트에 의존하지 않으며 플러그인 안에 블루프린트·맵·위젯 에셋을 넣지 않습니다. 오디오는 지원하지 않습니다.
 
-현재 CCTV-01C에서 Editor·Win64·Linux 빌드와 패키징, 단위 테스트 7개가 성공했습니다. Windows 16채널 패키지, Linux 소프트웨어 디코딩, PS 로드 공존, 크기·서브 전환과 장애 복구를 검증했습니다. **60분 소크는 재생·손실·재연결 조건을 충족했지만 스레드 121~123개 변동으로 FAIL입니다.** Linux Vulkan/NVDEC와 실제 Pixel Streaming 동시 인코딩 부하는 미검증입니다.
+현재 CCTV-01D에서 Editor·Win64·Linux 빌드와 패키징, 단위 테스트 9개가 성공했습니다. Windows 16채널과 Linux nullrhi의 CUDA4/SW12 디코딩, 라이브러리 누락 시 SW16 전환을 검증했습니다. **최종 60분 소크는 패킷 손실·프레임 대체·재연결·디코딩 오류 0이지만 스레드 총수 120~122개 변동으로 FAIL입니다.** 변동은 20분 시작 주소 분석에서 OS 모듈로 구분됐으며 기준은 유지했습니다. Linux Vulkan 렌더링은 ENV_BLOCKED, 실제 Pixel Streaming 동시 인코딩 부하는 미검증입니다.
 
 ## 프로젝트에 적용
 
@@ -36,7 +36,7 @@ Vulkan 렌더링에는 사용할 GPU와 호환되는 ICD와 그 종속 라이브
 bash TestHost/Scripts/linux_server_check.sh /path/to/Linux "$RTSP_URL"
 ```
 
-입력은 패키지 경로와 RTSP URL이며 Python3 표준 라이브러리만 필요합니다. 새 하네스의 `-CctvUrlEnv`로 인증 URL을 전달해 UE 명령행에 계정을 넣지 않고, 로그 URI와 Authorization을 가립니다. 임시 사용자 디렉터리는 자체 생성한 경로만 정리합니다. 기본 점검은 16채널·60초 이상·CUDA4/SW12·58fps·손실/재연결/프레임 대체0·1920x1080 비검은 타일 표본을 확인해 PASS/FAIL을 기록합니다. 입력 카메라는 1080p60 조건이어야 합니다. `--software-only`는 로더·SW 디코딩 범위만 확인하며 GPU 렌더링 합격을 뜻하지 않습니다. 이 PC에서의 구문·가능한 SW 실행 검증과 실제 GPU 서버 미실행 범위는 CCTV-01D 결과에 기록합니다.
+입력은 패키지 경로와 RTSP URL이며 Python3 표준 라이브러리만 필요합니다(`python3` 또는 RHEL의 `/usr/libexec/platform-python`). 새 하네스의 `-CctvUrlEnv`로 인증 URL을 전달해 UE 명령행에 계정을 넣지 않고, 로그 URI와 Authorization을 가립니다. 임시 사용자 디렉터리는 자체 생성한 경로만 정리합니다. 기본 점검은 16채널·60초 이상·CUDA4/SW12·58fps·손실/재연결/프레임 대체0·1920x1080 비검은 타일 표본을 확인해 PASS/FAIL을 기록합니다. 입력 카메라는 1080p60 조건이어야 합니다. `--software-only`는 로더·SW 디코딩 범위만 확인하며 GPU 렌더링 합격을 뜻하지 않습니다. 이 PC에서 구문·가림 처리와 실제 SW 실행(69.3초, decode59.984fps, 16Playing)을 확인했습니다. 기본 GPU 점검의 실제 서버 실행은 NOT_RUN입니다.
 
 ## UMG에서 사용
 
@@ -97,7 +97,7 @@ Stream->ReportViewSize(FVector2D(480.0, 270.0));
 | 카메라 `FDTCctvStreamConfig` | `Url`, `SubUrl` | 메인 주소, 선택적인 서브 주소 |
 | 카메라 | `Transport`, `DecodeMode` | TCP, Auto. Auto는 CUDA/NVDEC → Windows D3D11VA 또는 Linux VAAPI → 소프트웨어 순서 |
 | 카메라 | `ConnectTimeoutSeconds`, `ReadTimeoutSeconds` | 각각 5초. 연결·분석 기한, 읽기·출력 감시 기한 |
-| 카메라 | `MinReconnectDelaySeconds`, `MaxReconnectDelaySeconds` | 0.5초, 10초. 지수 대기 기준값에 최대 25% 지터가 더해짐 |
+| 카메라 | `MinReconnectDelaySeconds`, `MaxReconnectDelaySeconds` | 0.5초, 2초. 지수 대기 기준값에 최대 25% 지터가 더해짐. 명시적으로 지정한 값은 유지 |
 | 프로젝트 `UDTCctvSettings` | `MaxConcurrentConnects` | 8: 동시 연결 시도 상한 |
 | 프로젝트 | `MaxQueuedPackets` | 채널당 120. 초과하면 다음 키프레임까지 버림 |
 | 프로젝트 | `MaxHardwareDecodeStreams` | 4: 프로세스 내 HW 슬롯 예약 상한. 나머지는 소프트웨어 |
@@ -116,17 +116,23 @@ Stream->ReportViewSize(FVector2D(480.0, 270.0));
 LogDTCctv: ... 코덱=h264 해상도=1920x1080 FPS=60.00 디코딩=cuda
 ```
 
-URL은 `DTCctvMaskUrlCredentials`로 계정을 가립니다. 운영 코드에서도 원본 URL을 별도로 로그에 쓰지 마십시오. `PacketsDropped`는 과부하 패킷 손실이고 `FramesSuperseded`는 최대 3장의 표시 대기 프레임을 유지하면서 오래된 프레임을 대체한 수입니다. `FramesDisplayed`는 렌더 명령 등록 수이며 GPU 완료·실제 모니터 표시를 보증하는 계측은 아닙니다. `-nullrhi`에서는 표시 수를 늘리지 않습니다.
+URL은 `DTCctvMaskUrlCredentials`로 계정을 가립니다. 운영 코드에서도 원본 URL을 별도로 로그에 쓰지 마십시오. `PacketsDropped`는 과부하 패킷 손실이고 `FramesSuperseded`는 최대 8장의 표시 대기 프레임을 유지하면서 오래된 프레임을 대체한 수입니다. `QueuedFrames`, `PeakQueuedFrames`, `RenderCommandsInFlight`로 압축 패킷 큐와 구분해 확인합니다. `FramesDisplayed`는 렌더 명령 등록 수이며 GPU 완료·실제 모니터 표시를 보증하는 계측은 아닙니다. `-nullrhi`에서는 표시 수를 늘리지 않습니다.
 
 ## 검증 상태와 보류 시험
 
-2026-11-05 CCTV-01C에서 수정 코드를 Windows Editor와 Windows·Linux Development Game 대상으로 빌드·패키징했습니다. 단위 테스트는 신규 `FrameMetadata`, `OutputWatchdog`를 포함해 7개 성공·실패 0·미수행 0입니다. 양쪽 패키지에 FFmpeg 파일 5개씩 포함됐고, 쿡된 Windows SM5 및 Linux Vulkan SM5·SM6 전역 캐시에서 `FDTCctvYuvPS`를 확인했습니다. Linux ELF는 `libavcodec.so.62` 등 버전 SONAME을 참조합니다.
+2026-11-05 CCTV-01D의 공용 C++ 수정 후 Windows Editor와 Windows·Linux Development Game을 다시 빌드·패키징했습니다. 단위 테스트는 신규 `HwFormatFallback`, `FrameBurstBuffer`를 포함해 9개 모두 Success(일반 성공 8, 경고 포함 성공 1), 실패·미수행 0입니다. 폴백 시험의 의도된 경고를 성공 수에서 누락하지 않았습니다. CCTV-01C에서 FFmpeg 5개씩의 스테이징, Windows SM5·Linux Vulkan SM5/SM6 캐시의 `FDTCctvYuvPS`, Linux ELF의 버전 SONAME 참조를 확인했으며 이번에 FFmpeg 바이너리나 셰이더를 바꾸지 않았습니다.
 
-임시 `cctv/pkg` 패키지는 수정 코드를 반영합니다. 로컬 합성 H.264 RTSP 입력 1920×1080/60fps, 16클라이언트, Windows 1920×1080 오프스크린에서 69.2초 측정한 평균 디코딩은 59.986fps, 표시는 59.986fps, 패킷 손실·재연결은 0입니다. HW CUDA 4채널과 SW 12채널을 확인했습니다. 30fps 입력은 69.1초 동안 디코딩·표시 30.000fps였습니다.
+임시 `cctv/pkg` 패키지는 최종 수정 코드를 반영합니다. 로컬 합성 H.264 RTSP 입력 1920×1080/60fps, 16클라이언트, Windows 1920×1080 오프스크린에서 최종 69.1초 평균 디코딩 60.023fps, 표시 60.014fps, 패킷 손실·프레임 대체·재연결 0입니다. HW CUDA 4채널과 SW 12채널을 확인했습니다. CCTV-01C의 30fps 보조 측정값도 원본 결과에 보존했습니다.
 
-RHEL 8.10/glibc 2.28 컨테이너의 nullrhi 소프트웨어 디코딩에서 FFmpeg 로드와 16채널 Playing을 확인했습니다. Vulkan 시도는 `VK_ERROR_INCOMPATIBLE_DRIVER`·종료139로 실패했습니다. Windows 서버 재시작 후 전 채널 복구 관측값은 4.908초이며 CSV 표본 간격 오차가 있습니다. 크기·서브 전환 PNG를 직접 표본 검수했고 Close/Open 5회 후 마지막 재생 구간의 핸들·스레드·GPU 메모리는 안정됐습니다.
+RHEL 8.10/glibc 2.28에서 nullrhi CUDA4/SW12의 채널당 약60fps와 16Playing을 확인했습니다. video 라이브러리가 없을 때 실제 SW인데 CUDA로 표시하던 결함과 첫 키프레임 전 재연결 반복을 수정했고, 같은 누락 조건에서 SW16Playing·정상 종료를 확인했습니다. 이 장애 전환 시험은 재연결·시작 프레임 대체를 포함하므로 정상 경로 무손실 증거로 사용하지 않습니다. Vulkan은 기존 드라이버·프로파일 우회 시험까지 실패해 ENV_BLOCKED입니다.
 
-60분 소크 측정 구간 3604.1초의 디코딩·표시는 각각 59.999fps, 패킷 손실·재연결·디코딩 오류는 0입니다. 다만 10~60분 스레드가 121~123개로 변해 일정 기준은 FAIL입니다. 같은 구간 Private 메모리는 +7.77MiB(회귀 +5.35MiB/h, 양 끝값 +9.34MiB/h), GPU Dedicated는 +0.039MiB였습니다. 작은 양의 메모리 추세만으로 누수 여부를 확정하지 않았습니다. 72시간 안정성·실카메라·회사 수용 검증은 미수행입니다. 근거와 재시도 이력은 `Saved/Reports/CCTV-01C/RESULT.md`, 진행은 `progress.md`에 기록합니다.
+장애 복구 1차는 7.108초로 5초 목표에 미달했습니다. 기본 재시도 상한을 10→2초로 바꾸고 전부 재빌드한 뒤 전16채널 복구 3.577초를 관측했습니다(CSV 약1초 표본). Close/Open 5회는 실제 16Playing 연속 구간 86.2초에서 decode/display59.993fps입니다. 닫힘·연결·키프레임 대기를 포함한 원평균48.637fps도 보존했습니다. 극단 확대의 선명도 회복 상한은 PNG 표본 기준 최대0.805초로 1초 기준을 통과했습니다.
+
+Close/Open 반복 뒤 스레드는123개로 복귀했지만 Private·핸들·GPU 메모리는 최초 기준값과 일치하지 않습니다. 최종 구간의 범위와 차이는 결과의 `close-final-analysis.json`에 남겼습니다. 재생 반복 합격을 전체 자원 회복이나 누수 없음의 증거로 사용하지 않습니다.
+
+CCTV-01C의 프레임 대체 4건은 압축 패킷 큐0 상태에서 max_frame48.6/62.7ms와 겹쳤습니다. 짧은 지연을 흡수하도록 표시 큐를 3→8장으로 늘리고 기존 대체 카운터를 유지했습니다. 최종 소크 3605초는 decode59.99906/display59.99917fps, 패킷 손실·재연결·디코딩 오류·프레임 대체0, 큐 고수위4입니다. 20분 원인 분석 후 최종 코드를 60분 실행한 결과이며, 총 스레드120~122 변동으로 전체 소크는 FAIL입니다.
+
+20분 시작 주소·모듈·TID 분석에서 실행파일86, CRT16, NVIDIA 스레드 집합이 고정되고 변동은 ntdll 및 초기 OS 스레드로 구분됐습니다. 총수 일정 기준 변경은 사용자 결정 사항입니다. 최종 소크의 10~60분 Private +7.828MiB(회귀+8.134MiB/h), GPU Dedicated +0.004MiB입니다. 회귀는 표본 창에 민감하며 누수 유무를 확정하지 않았습니다. Working Set 감소는 Private와 별도 지표입니다. 72시간·실카메라·회사 수용은 미수행입니다. 근거·재시도·최종 판정은 `Saved/Reports/CCTV-01D/RESULT.md`, 진행은 같은 폴더의 `progress.md`에 있습니다.
 
 | 준비한 하네스 옵션 | 시나리오·산출물 |
 |---|---|
@@ -142,23 +148,23 @@ RHEL 8.10/glibc 2.28 컨테이너의 nullrhi 소프트웨어 디코딩에서 FFm
 
 사용자가 UE 사용을 다시 허용한 뒤에만 `TestHost/Scripts/run_pending_gates.ps1 -Execute`를 실행합니다. 기본 동작은 계획 출력입니다. 실행기는 현재 코드의 Editor 빌드·단위 테스트·양 플랫폼 재패키징을 먼저 수행하고, 4~8번을 순서대로 진행하며 60분 시험을 마지막에 둡니다. 한 번에 한 빌드·게임·측정만 실행합니다. 상주하는 `UnrealTraceServer`는 바쁜 작업에서 제외합니다. 다른 Editor·빌드·쿡·셰이더 컴파일·시험 프로세스는 계속 거부하며, 기존 작업을 종료하지 않습니다.
 
-`fault_test.ps1`도 기본적으로 실행하지 않으며, 실행 시 직접 시작한 PID의 생성 시각과 실행 경로를 확인한 후에만 종료합니다. 준비한 실행기와 자원 수집·정리 경로 자체의 실행 검증도 남아 있습니다.
+`fault_test.ps1`도 기본적으로 실행하지 않으며, 실행 시 직접 시작한 PID의 생성 시각과 실행 경로를 확인한 후에만 종료합니다. CCTV-01C·01D에서 실행기와 자원 수집·자체 프로세스 및 컨테이너 정리 경로를 실제 사용했습니다.
 
 측정용 Windows 게임은 숨김 창 대신 `-RenderOffScreen`으로 실행하도록 준비했습니다. `WindowStyle Hidden`은 mediamtx·ffmpeg에만 적용합니다. 첫 Windows 측정은 워밍업 뒤 `output_w > 0`과 최종 PNG의 비검은 픽셀 표본을 확인하며, 0 크기·검은 화면·PNG 읽기 실패는 `INVALID`로 기록합니다. 이 확인은 오프스크린 렌더링이 실제로 동작하는지 점검하기 위한 것이며, 화면 품질과 전환 깜빡임의 직접 검수를 대신하지 않습니다. CCTV-01C에서 오프스크린·1920×1080 PNG와 양수 출력 크기를 확인했습니다.
 
-결과는 `Saved/Reports/CCTV-01/pending-<시각>/`, 큰 빌드·실행 로그는 `Saved/Logs/CCTV-01/`에 둡니다. 패키지는 저장소 밖 기존 임시 패키지 폴더를 사용합니다. Windows 16채널 1080p60 기준은 60초 이상, 평균 디코딩·표시 각각 58fps 이상, 패킷 손실·재연결 0으로 유지합니다. Docker GPU 불가 시 RHEL 8 소프트웨어 디코딩만 확인하고 렌더링·NVDEC는 미수행으로 남깁니다. 연속 PNG의 검은 화면·깜빡임·마지막 프레임 유지, 반복 전후 자원과 장시간 누수 여부는 직접 검수하기 전까지 `REVIEW_REQUIRED`입니다.
+기본 실행기 결과는 `Saved/Reports/CCTV-01/pending-<시각>/`, 큰 로그는 `Saved/Logs/CCTV-01/`에 둡니다. CCTV-01D 결과·로그는 각각 `Saved/Reports/CCTV-01D/`, `Saved/Logs/CCTV-01D/`에 있습니다. 패키지는 저장소 밖 기존 임시 폴더를 사용합니다. Windows 16채널 1080p60 기준은 60초 이상, 평균 디코딩·표시 각각 58fps 이상, 패킷 손실·재연결 0으로 유지합니다. nullrhi는 디코딩 범위만 판정하고 렌더링과 구분합니다. CCTV-01D의 최종 게이트 판정에는 검수 대기 항목이 없습니다.
 
 ## 한계
 
-- Linux Vulkan/NVDEC는 드라이버 오류로 미검증이며, 로더·RTSP·PS 로드 공존은 소프트웨어 디코딩 범위로 검증했습니다.
+- Linux NVDEC 디코딩은 nullrhi CUDA4/SW12로 검증했습니다. Vulkan YUV 렌더링은 드라이버 초기화 실패로 ENV_BLOCKED입니다. PS 로드 공존은 CCTV-01C 소프트웨어 실행 범위의 증거입니다.
 - 위 측정은 로컬 합성 입력 범위이며 Linux 렌더링과 실카메라·회사 수용 검증으로 확대 해석하지 않습니다.
 - `ps_coexist` 결과는 플러그인 로드 공존 범위입니다. 실제 Pixel Streaming 클라이언트 연결·영상 수신과 NVENC 인코딩 중 RTSP 16채널 동시 부하는 미검증입니다. 실행기 결과의 `known_limits`와 `user_checks`에도 이 한계를 남깁니다.
 - 렌더 명령 대기 중 강제 GC와 실제 GPU 장치 오류 복구의 별도 재현 시험은 남아 있습니다.
-- 크기 전환은 시험했지만, 극단적으로 작은 영상에서 크게 확대하는 순간 기존 저해상도 프레임이 잠시 흐려지는 표본이 있었습니다. 다음 0.5초 PNG 표본에서 회복했습니다. PNG 표본은 모든 렌더 프레임의 무깜빡임을 보증하지 않습니다.
+- 극단 확대 직후 일시적 흐림은 최종 PNG 표본에서 최대0.805초 이내 회복했습니다. PNG 표본은 모든 렌더 프레임의 무깜빡임을 보증하지 않습니다.
 - 서브 전환 중 기존·새 연결이 잠시 공존하며 새 주소가 실패하면 전환 대기 세션이 재연결을 계속합니다.
-- 프레임 대기열은 최대 3장입니다. 카메라보다 낮은 표시 FPS에서는 모든 프레임을 화면에 표시할 수 없습니다.
+- 프레임 대기열은 최대 8장입니다. 카메라보다 낮은 표시 FPS에서는 모든 프레임을 화면에 표시할 수 없습니다. 측정 무손실이 임의 부하의 무손실 보증은 아닙니다.
 - 오디오·탐색·시계 동기화와 GPU 간 직접 표면 공유는 지원하지 않습니다.
 
 사용자 확인 항목: Windows·Linux에서 실제 시그널링 서버·클라이언트를 연결해 영상을 수신하고, NVENC 인코딩 활성 증거와 RTSP 16채널 동시 재생의 FPS·손실·GPU 자원 추세를 확인해야 합니다. 플러그인 로드 공존 합격만으로 이 동시 부하까지 합격했다고 해석하지 않습니다.
 
-설계와 미검증 항목은 [docs/DESIGN.md](docs/DESIGN.md), 이번 작업 결과는 `Saved/Reports/CCTV-01C/RESULT.md`를 참조하십시오.
+설계와 미검증 항목은 [docs/DESIGN.md](docs/DESIGN.md), 이번 작업 결과는 `Saved/Reports/CCTV-01D/RESULT.md`를 참조하십시오.
