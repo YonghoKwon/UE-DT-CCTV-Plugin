@@ -41,6 +41,8 @@ Windows는 FFmpeg DLL 5개, Linux는 SONAME 파일 5개를 실행 바이너리 �
 3. `CctvView → GetStream`으로 얻은 객체의 `OnStateChanged`에 운영 위젯의 이벤트를 바인딩합니다. 최초 표시에는 `GetState`를 읽습니다.
 4. 운영 위젯의 `Event Destruct`에서 `CctvView → Stop`을 호출합니다. Slate 리소스 해제 경로에서도 닫지만 명시적인 화면 수명 관리를 권장합니다.
 
+`Stop` 없이 위젯만 제거하면 GC 전까지 재생이 계속됩니다. 제거 즉시 재생을 끝내려면 `Stop`을 명시적으로 호출하십시오. GC 중 월드를 찾지 못해도 스트림의 Outer인 서브시스템에서 제거하도록 했으며, 스트림이나 소유 서브시스템이 같은 GC에서 파괴 중이면 닫기·목록 접근을 건너뜁니다. 이 수명 경로의 실제 UE 검증은 남아 있습니다.
+
 **재연결 상태 표시는 운영 위젯의 책임입니다.** `DTCctvView`는 영상만 표시하며 자체적인 재연결 문구·스피너·실패 배너를 만들지 않습니다. `Connecting`, `Playing`, `Reconnecting`, `Idle`을 운영 UI의 텍스트나 오버레이에 연결합니다. `Reconnecting`일 때 영상 브러시를 지우지 않으면 마지막 프레임을 계속 보여 줄 수 있습니다.
 
 ## C++·블루프린트 API

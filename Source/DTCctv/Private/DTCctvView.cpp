@@ -147,13 +147,23 @@ void UDTCctvView::Stop()
 		return;
 	}
 
-	if (UDTCctvSubsystem* Subsystem = FindSubsystem(this))
+	UDTCctvStream* StreamToClose = Stream.Get();
+	if (IsValid(StreamToClose) && !StreamToClose->IsUnreachable() &&
+		!StreamToClose->HasAnyFlags(RF_BeginDestroyed | RF_FinishDestroyed))
 	{
-		Subsystem->CloseStream(Stream);
-	}
-	else
-	{
-		Stream->Close();
+		// GC 중에는 월드가 없어도 실제 소유자의 목록에서 제거한다.
+		if (UDTCctvSubsystem* Subsystem = Cast<UDTCctvSubsystem>(StreamToClose->GetOuter()))
+		{
+			if (IsValid(Subsystem) && !Subsystem->IsUnreachable() &&
+				!Subsystem->HasAnyFlags(RF_BeginDestroyed | RF_FinishDestroyed))
+			{
+				Subsystem->CloseStream(StreamToClose);
+			}
+		}
+		else
+		{
+			StreamToClose->Close();
+		}
 	}
 	Stream = nullptr;
 
