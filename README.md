@@ -20,7 +20,7 @@ UE 5.3 프로젝트에서 RTSP CCTV를 표시하는 Windows·Linux용 C++ 플러
 
 Windows는 FFmpeg DLL 5개, Linux는 SONAME 파일 5개를 실행 바이너리 옆에 스테이징합니다. Linux의 확장자 `.so` 파일은 버전 파일을 가리키는 텍스트 링커 스크립트입니다. 이를 바이너리로 교체하거나 버전 라이브러리를 빼면 안 됩니다. 자세한 버전·LGPL 정보는 [동봉 FFmpeg 설명](Source/ThirdParty/DTCctvFFmpeg/README.md)에 있습니다.
 
-**기존 FFMPEGMedia 플러그인과 함께 사용하지 말 것.** 이 조합은 시험 대상에서 제외했습니다. Pixel Streaming은 TestHost에서 활성화해 시험을 준비했으며 Windows·Linux의 실제 심볼 공존은 아직 확인하지 않았습니다.
+**기존 FFMPEGMedia 플러그인과 함께 사용하지 말 것.** 이 조합은 시험 대상에서 제외했습니다. Pixel Streaming은 TestHost에서 활성화해 시험을 준비했으며 Windows·Linux의 실제 심볼 공존은 아직 확인하지 않았습니다. 실행기의 `ps_coexist` 판정 범위는 **"플러그인 로드 공존만 확인, 실제 스트리밍 동시 부하는 미검증"**입니다. 현재는 그 로드 공존 시험도 미수행입니다. 기존 합격 기준인 PixelStreaming 활성화 빌드의 시작과 16채널 재생은 유지합니다.
 
 ## UMG에서 사용
 
@@ -131,9 +131,12 @@ URL은 `DTCctvMaskUrlCredentials`로 계정을 가립니다. 운영 코드에서
 ## 한계
 
 - 패키지 재생과 Linux RHEL 8 실제 로드, Pixel Streaming 공존은 아직 검증하지 않았습니다.
+- `ps_coexist` 결과는 플러그인 로드 공존 범위입니다. 실제 Pixel Streaming 클라이언트 연결·영상 수신과 NVENC 인코딩 중 RTSP 16채널 동시 부하는 미검증입니다. 실행기 결과의 `known_limits`와 `user_checks`에도 이 한계를 남깁니다.
 - 렌더 명령 대기 중 GC, 해상도 변경, 장치 오류 복구, Close/Open 자원 회수는 실제 UE 시험이 필요합니다.
 - 서브 전환 중 기존·새 연결이 잠시 공존하며 새 주소가 실패하면 전환 대기 세션이 재연결을 계속합니다.
 - 프레임 대기열은 최대 3장입니다. 카메라보다 낮은 표시 FPS에서는 모든 프레임을 화면에 표시할 수 없습니다.
 - 오디오·탐색·시계 동기화와 GPU 간 직접 표면 공유는 지원하지 않습니다.
+
+사용자 확인 항목: Windows·Linux에서 실제 시그널링 서버·클라이언트를 연결해 영상을 수신하고, NVENC 인코딩 활성 증거와 RTSP 16채널 동시 재생의 FPS·손실·GPU 자원 추세를 확인해야 합니다. 플러그인 로드 공존 합격만으로 이 동시 부하까지 합격했다고 해석하지 않습니다.
 
 설계와 미검증 항목은 [docs/DESIGN.md](docs/DESIGN.md), 이번 작업 결과는 `Saved/Reports/CCTV-01A/RESULT.md`를 참조하십시오.

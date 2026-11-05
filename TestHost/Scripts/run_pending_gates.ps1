@@ -35,7 +35,12 @@ if (@($descriptor.Plugins | Where-Object { $_.Name -eq 'PixelStreaming' -and $_.
 $run = Join-Path $out ('pending-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 $logs = Join-Path $repo ('Saved\Logs\CCTV-01\' + (Split-Path $run -Leaf))
 New-Item -ItemType Directory -Path $run, $logs -Force | Out-Null
-$results = [ordered]@{}
+$psScope = '플러그인 로드 공존만 확인, 실제 스트리밍 동시 부하는 미검증'
+$psUserChecks = @(
+	'사용자 확인: Windows·Linux에서 시그널링 서버와 클라이언트를 연결하고 실제 Pixel Streaming 영상을 수신할 것.',
+	'사용자 확인: 실제 NVENC 인코딩이 활성화된 상태에서 RTSP 16채널 동시 재생과 FPS·손실·GPU 자원 추세를 확인할 것.'
+)
+$results = [ordered]@{ known_limits = @($psScope); user_checks = $psUserChecks }
 $winExe = Join-Path $Packages 'Windows\DTCctvTestHost\Binaries\Win64\DTCctvTestHost.exe'
 $linuxRendering = $false
 
@@ -217,6 +222,16 @@ try
 	$ps = $results['6_ps_windows']
 	$ps.status = if ($ps.status -eq 'MEASURED' -and $ps.all_playing -and $ps.pixel_streaming_mounted) { 'PASS' } else { 'FAIL' }
 	$results['6_ps_linux'] = Invoke-DTCctvLinuxCase -Tag ps-linux -Count 16 -Gpu:$linuxRendering -AddHost
+	foreach ($psKey in @('6_ps_windows', '6_ps_linux'))
+	{
+		$psCase = $results[$psKey]
+		$psCase['validation_scope'] = $psScope
+		$psCase['actual_streaming_concurrent_load_status'] = 'NOT_RUN'
+		$psCase['known_limits'] = @($psScope)
+		$psCase['user_checks'] = $psUserChecks
+		$psCase.note = ($psCase.note + ' ' + $psScope).Trim()
+		Write-DTCctvJson -Path (Join-Path $psCase.path 'result.json') -Value $psCase
+	}
 	foreach ($scenario in @('drag', 'extremes', 'subset'))
 	{
 		$results["7_$scenario"] = Invoke-DTCctvWindowsCase -Tag "resize-$scenario" -Seconds 80 -Extra "-CctvResizeScenario=$scenario -CctvResizeAffected=4 -CctvShotEvery=0.5"
