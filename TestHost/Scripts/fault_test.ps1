@@ -6,6 +6,7 @@ param(
 	[Parameter(Mandatory)][string]$Out,
 	[string]$Executable = 'C:\Program Files\Epic Games\UE_5.3\Engine\Binaries\Win64\UnrealEditor.exe',
 	[ValidateRange(1, 64)][int]$Count = 16,
+	[ValidateRange(1, 240)][int]$GameFps = 144,
 	[ValidateRange(1, 60)][int]$OutageSeconds = 20,
 	[ValidateSet('', 'disconnected')][string]$ResizeScenario = '',
 	[switch]$Windowed,
@@ -37,6 +38,8 @@ try
 	$prefix = if ([IO.Path]::GetFileName($Executable) -like 'UnrealEditor*') { '"' + $project + '" -game ' } else { '' }
 	$duration = 90 + $OutageSeconds
 	$arguments = $prefix + '-RenderOffScreen -windowed -ForceRes -ResX=1920 -ResY=1080 -unattended -nosplash -nosound -CctvUrl=rtsp://127.0.0.1:8554/cam -CctvCount=' + $Count + ' -CctvSeconds=' + $duration + ' -CctvCsv="' + $csv + '" -ExecCmds="r.VSync 0,t.MaxFPS 144" -abslog="' + $run + '\game.log"'
+	$arguments = $arguments.Replace('t.MaxFPS 144', "t.MaxFPS $GameFps")
+	$result['game_fps_limit'] = $GameFps
 	if ($Windowed) { $arguments = $arguments.Replace('-RenderOffScreen ', '') }
 	if ($ResizeScenario)
 	{
@@ -95,7 +98,7 @@ try
 		if ([datetime]::UtcNow -ge $deadline) { throw '게임이 지정 시험 시간 후 종료되지 않았습니다.' }
 	}
 	Assert-DTCctvMeasurementIdle -Owned $owned -Force
-	$result.status = if ($game.Process.ExitCode -eq 0) { 'PASS' } else { 'FAIL' }
+	$result.status = if ($game.Process.ExitCode -eq 0 -and $result.recovery_seconds -le $result.recovery_target_seconds) { 'PASS' } else { 'FAIL' }
 	$result.note = '전 채널 재생과 디코딩 재개를 확인했습니다. 복구 시간은 송출 준비 로그 이후 CSV 관측값이며 표본 간격 오차가 있습니다.'
 	$result['exit_code'] = $game.Process.ExitCode
 	$result['outage_seconds'] = ([datetime]$restoredAt - $stoppedAt).TotalSeconds

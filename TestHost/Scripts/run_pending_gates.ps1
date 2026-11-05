@@ -72,7 +72,7 @@ function Invoke-DTCctvBuild
 
 function Invoke-DTCctvWindowsCase
 {
-	param([string]$Tag, [int]$Fps = 60, [int]$Seconds = 80, [string]$Extra = '', [switch]$SubStream, [switch]$ValidateRendering, [switch]$Windowed, [int]$GameFps = 144, [double]$ResourceIntervalSeconds = 5.0, [double]$ThreadModuleIntervalSeconds = 0.0)
+	param([string]$Tag, [int]$Fps = 60, [int]$Seconds = 80, [string]$Extra = '', [switch]$SubStream, [switch]$ValidateRendering, [switch]$Windowed, [int]$GameFps = 144, [double]$ResourceIntervalSeconds = 5.0, [double]$ThreadModuleIntervalSeconds = 0.0, [switch]$SkipScreenshot)
 	Assert-DTCctvIdle
 	$case = Join-Path $run $Tag
 	New-Item -ItemType Directory -Path $case | Out-Null
@@ -89,6 +89,8 @@ function Invoke-DTCctvWindowsCase
 		$argsLine = '-RenderOffScreen -windowed -ForceRes -ResX=1920 -ResY=1080 -unattended -nosplash -nosound -CctvUrl=rtsp://127.0.0.1:8554/cam -CctvCount=16 -CctvSeconds=' + $Seconds + ' -CctvCsv="' + $case + '\samples.csv" -CctvShot="' + $case + '\final.png" -ExecCmds="r.VSync 0,t.MaxFPS 144" -abslog="' + $logs + '\' + $Tag + '.game.log" ' + $Extra
 		$argsLine = $argsLine.Replace('t.MaxFPS 144', "t.MaxFPS $GameFps")
 		$summary['game_fps_limit'] = $GameFps
+		$summary['screenshot_requested'] = -not $SkipScreenshot
+		if ($SkipScreenshot) { $argsLine = $argsLine.Replace(' -CctvShot="' + $case + '\final.png"', '') }
 		$summary['window_mode'] = if ($Windowed) { 'windowed' } else { 'offscreen' }
 		if ($Windowed) { $argsLine = $argsLine.Replace('-RenderOffScreen ', '') }
 		$game = Start-DTCctvOwnedProcess -File $winExe -Arguments $argsLine -WorkingDirectory (Split-Path $winExe) -LogPrefix "$logs\$Tag.game" -Owned $owned

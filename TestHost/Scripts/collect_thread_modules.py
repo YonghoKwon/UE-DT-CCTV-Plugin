@@ -18,6 +18,7 @@ def main():
     parser.add_argument("output", type=Path)
     parser.add_argument("--interval", type=float, default=300)
     parser.add_argument("--initial-delay", type=float, default=10)
+    parser.add_argument("--periodic-interval", type=float, default=300)
     args = parser.parse_args()
     record = json.loads(args.owner.read_text(encoding="utf-8-sig"))
     process = psutil.Process(record["pid"])
@@ -44,8 +45,9 @@ def main():
         raise ctypes.WinError(ctypes.get_last_error())
     previous = {}
     next_sample = time.monotonic()+max(0, args.initial_delay)
+    next_periodic = next_sample
     try:
-        with args.output.open("a", encoding="utf-8", buffering=1) as stream:
+        with args.output.open("a", encoding="utf-8", buffering=1) as stream, args.output.with_suffix(".5min.jsonl").open("a", encoding="utf-8", buffering=1) as periodic:
             while process.is_running() and abs(process.create_time()-expected) < .05:
                 if time.monotonic() < next_sample:
                     time.sleep(max(0, min(1, next_sample-time.monotonic())))
@@ -75,6 +77,9 @@ def main():
                               added=[current[t] for t in current.keys()-previous.keys()],
                               removed=[previous[t] for t in previous.keys()-current.keys()], threads=list(current.values()))
                 stream.write(json.dumps(sample, ensure_ascii=False)+"\n")
+                if time.monotonic() >= next_periodic:
+                    periodic.write(json.dumps(sample, ensure_ascii=False)+"\n")
+                    next_periodic += max(1, args.periodic_interval)
                 previous = current
                 next_sample += max(.1, args.interval)
     except psutil.NoSuchProcess:
