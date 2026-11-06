@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "DTCctvStreamInfo.h"
 
 struct FDTCctvStreamStats;
 
@@ -29,9 +30,6 @@ bool DTCctvShouldBackpressure(double NowSeconds, double LastPollSeconds, double 
 
 /** 소비 여유가 있으면750ms까지 버스트를 보존하고, 나머지는 지속 대기·age로40ms 안쪽까지 따라잡는다. */
 int32 DTCctvChooseStaleFrameSkip(TConstArrayView<double> FrameAgesSeconds, double BacklogSeconds, bool bCanCatchUp = false);
-
-/** 로그에 남기기 전에 URL의 계정 정보를 가린다. */
-FString DTCctvMaskUrlCredentials(const FString& Text);
 
 /** 표시 크기에 맞는 렌더 타깃 크기. 비율을 유지하고 원본보다 커지지 않는다. */
 FIntPoint DTCctvComputeOutputSize(FIntPoint SourceSize, FVector2D ViewSize);

@@ -4,6 +4,7 @@
 #include "DTCctvPolicies.h"
 #include "DTCctvSession.h"
 #include "DTCctvSettings.h"
+#include "DTCctvInfoUtils.h"
 #include "DTCctvYuvRenderer.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "HAL/PlatformTime.h"
@@ -63,6 +64,11 @@ void UDTCctvStream::Open(const FDTCctvStreamConfig& InConfig)
 	Close();
 
 	Config = InConfig;
+	bLoggedConnectionInfo = false;
+	bLoggedStabilized = false;
+	bLoggedGop = false;
+	InfoSession.Reset();
+	LoggedInfoRevision = 0;
 	Accumulated = FDTCctvStreamStats();
 	FramesDisplayed = 0;
 	StatsWindowStart = 0.0;
@@ -344,6 +350,7 @@ void UDTCctvStream::Tick(float DeltaTime)
 	}
 
 	const EDTCctvState NewState = Session->GetState();
+	LogStreamInfo();
 	if (NewState != LastState)
 	{
 		LastState = NewState;
@@ -419,4 +426,57 @@ void UDTCctvStream::BeginDestroy()
 		PendingSession.Reset();
 	}
 	Super::BeginDestroy();
+}
+
+FDTCctvStreamInfo UDTCctvStream::GetStreamInfo() const
+{
+	return Session.IsValid() ? Session->GetStreamInfo() : FDTCctvStreamInfo();
+}
+
+void UDTCctvStream::LogStreamInfo()
+{
+	const bool bSessionChanged = InfoSession.Pin() != Session;
+	const uint64 Revision = Session->GetInfoRevision();
+	if (!bSessionChanged && Revision == LoggedInfoRevision)
+	{
+		return;
+	}
+	const FDTCctvStreamInfo Info = Session->GetStreamInfo();
+	if (Info.CodecName.IsEmpty())
+	{
+		return;
+	}
+	if (bSessionChanged || Info.ConnectionNumber != LoggedInfo.ConnectionNumber)
+	{
+		bLoggedStabilized = false;
+		bLoggedGop = false;
+	}
+	if (!bLoggedConnectionInfo)
+	{
+		UE_LOG(LogDTCctv, Log, TEXT("연결정보 | %s"), *DTCctvInfoSummary(Info));
+		bLoggedConnectionInfo = true;
+	}
+	else
+	{
+		const FString Changes = DTCctvInfoChanges(LoggedInfo, Info);
+		if (!Changes.IsEmpty())
+		{
+			UE_LOG(LogDTCctv, Log, TEXT("스트림 정보 변경 | %s"), *Changes);
+		}
+	}
+	if (Info.bStabilized && !bLoggedStabilized)
+	{
+		UE_LOG(LogDTCctv, Log, TEXT("안정화정보 | 주소=%s | 실측FPS=%.3f | 평균비디오비트레이트=%lldbps | GOP=%.3f초/%d프레임 | GOP관측=%d | 실제B프레임=%d"),
+			*Info.SafeUrl, Info.MeasuredFps, Info.MeasuredBitrateBps, Info.GopSeconds, Info.GopFrames, Info.bMeasuredGop, Info.bObservedBFrames);
+		bLoggedStabilized = true;
+		bLoggedGop = Info.bMeasuredGop;
+	}
+	else if (Info.bStabilized && Info.bMeasuredGop && !bLoggedGop)
+	{
+		UE_LOG(LogDTCctv, Log, TEXT("안정화정보 추가 | 주소=%s | GOP=%.3f초/%d프레임"), *Info.SafeUrl, Info.GopSeconds, Info.GopFrames);
+		bLoggedGop = true;
+	}
+	LoggedInfo = Info;
+	LoggedInfoRevision = Revision;
+	InfoSession = Session;
 }

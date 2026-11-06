@@ -20,6 +20,8 @@ namespace
 	constexpr int64 MaxPendingFrameBytes = 24 * 1024 * 1024;
 
 	std::atomic<int32> ActiveHwSessions{ 0 };
+	FCriticalSection SdpRegistryLock;
+	TMap<void*, FDTCctvSession*> SdpRegistry;
 
 	using FSessionPtr = TSharedPtr<FDTCctvSession, ESPMode::ThreadSafe>;
 
@@ -276,6 +278,8 @@ void FDTCctvSession::FillStats(FDTCctvStreamStats& Stats) const
 	Stats.PreparedFrameSize = PreparedFrameSize;
 	Stats.CodecName = CodecName;
 	Stats.DecoderName = DecoderName;
+	Stats.LastError = LastError;
+	Stats.LastErrorCode = LastErrorCode;
 	FrameAge.FillStats(Stats);
 }
 
@@ -289,6 +293,165 @@ void FDTCctvSession::ResetFrameAgeStats()
 {
 	FScopeLock ScopeLock(&Lock);
 	FrameAge = FDTCctvFrameAgeAccumulator();
+}
+
+FDTCctvStreamInfo FDTCctvSession::GetStreamInfo() const
+{
+	FScopeLock ScopeLock(&Lock);
+	return StreamInfo;
+}
+
+void FDTCctvSession::CaptureSdpLog(void* Context, const FString& Message)
+{
+	const int32 Start = Message.Find(TEXT("SDP:"));
+	if (Start == INDEX_NONE)
+	{
+		return;
+	}
+	FScopeLock RegistryLock(&SdpRegistryLock);
+	if (FDTCctvSession* Session = SdpRegistry.FindRef(Context))
+	{
+		FDTCctvStreamInfo Parsed;
+		DTCctvParseSdpInfo(Message.Mid(Start + 4), Parsed);
+		FScopeLock ScopeLock(&Session->Lock);
+		Session->SdpInfo = MoveTemp(Parsed);
+	}
+}
+
+void FDTCctvSession::CaptureConnectionInfo()
+{
+	AVStream* Video = FormatContext->streams[VideoStreamIndex];
+	FDTCctvStreamInfo Info;
+	{
+		FScopeLock ScopeLock(&Lock);
+		Info = SdpInfo;
+		Info.DecoderName = DecoderName;
+	}
+	Info.SafeUrl = DTCctvMaskUrlCredentials(Params.Url);
+	Info.Transport = Params.Transport == EDTCctvTransport::Tcp ? TEXT("TCP") : TEXT("UDP");
+	Info.CodecName = UTF8_TO_TCHAR(avcodec_get_name(Video->codecpar->codec_id));
+	Info.Profile = DTCctvProfileName(Video->codecpar->codec_id, CodecContext->profile);
+	Info.Level = DTCctvLevelName(Video->codecpar->codec_id, CodecContext->level);
+	Info.SourceSize = FIntPoint(Video->codecpar->width, Video->codecpar->height);
+	DTCctvDescribePixelFormat(static_cast<AVPixelFormat>(Video->codecpar->format), Info);
+	const AVRational Rate = Video->avg_frame_rate.num > 0 && Video->avg_frame_rate.den > 0
+		? Video->avg_frame_rate : av_guess_frame_rate(FormatContext, Video, nullptr);
+	Info.DeclaredFps = Rate.num > 0 && Rate.den > 0 ? av_q2d(Rate) : 0.0;
+	Info.bDeclaredBFrames = Video->codecpar->video_delay > 0 || CodecContext->has_b_frames > 0;
+	Info.DecoderReason = DecoderReason;
+	Info.ConnectionNumber = ++ConnectionNumber;
+	int32 VideoOrdinal = 0;
+	for (uint32 Index = 0; Index < FormatContext->nb_streams; ++Index)
+	{
+		const AVCodecParameters* Parameters = FormatContext->streams[Index]->codecpar;
+		if (Parameters->codec_type == AVMEDIA_TYPE_VIDEO)
+		{
+			if (static_cast<int32>(Index) == VideoStreamIndex)
+			{
+				Info.SelectedVideoTrack = VideoOrdinal;
+				Info.SelectedStreamIndex = VideoStreamIndex;
+			}
+			++VideoOrdinal;
+		}
+	}
+	if (!Info.bSdpKnown)
+	{
+		Info.VideoTracks = VideoOrdinal;
+	}
+	if (Info.SessionName.IsEmpty())
+	{
+		if (const AVDictionaryEntry* Title = av_dict_get(FormatContext->metadata, "title", nullptr, 0))
+		{
+			Info.SessionName = DTCctvMaskUrlCredentials(UTF8_TO_TCHAR(Title->value));
+		}
+	}
+	StreamProbe = FDTCctvStreamProbe();
+	VideoPayloadBytes.store(0);
+	bFrameFormatObserved = false;
+	bInfoProbeComplete = false;
+	{
+		FScopeLock ScopeLock(&Lock);
+		StreamInfo = MoveTemp(Info);
+		LastError.Reset();
+		LastErrorCode = 0;
+	}
+	InfoRevision.fetch_add(1);
+}
+
+void FDTCctvSession::ObserveFrameInfo(AVFrame* Frame, AVFrame* Transferred)
+{
+	if (FormatContext == nullptr || CodecContext == nullptr || VideoStreamIndex < 0)
+	{
+		return;
+	}
+	const FIntPoint Size(Transferred->width, Transferred->height);
+	const bool bFormatChanged = bFrameFormatObserved && (InfoFrameSize != Size || InfoFrameFormat != Transferred->format);
+	if (bInfoProbeComplete && !bFormatChanged)
+	{
+		return;
+	}
+	const double Now = NowSeconds();
+	const AVRational TimeBase = FormatContext->streams[VideoStreamIndex]->time_base;
+	const double MediaSeconds = Frame->best_effort_timestamp != AV_NOPTS_VALUE
+		? Frame->best_effort_timestamp * av_q2d(TimeBase) : -1.0;
+	if (!bInfoProbeComplete)
+	{
+		StreamProbe.Record(Now, MediaSeconds, (Frame->flags & AV_FRAME_FLAG_KEY) != 0, Frame->pict_type == AV_PICTURE_TYPE_B);
+	}
+	FScopeLock ScopeLock(&Lock);
+	const bool bStableUpdate = !StreamInfo.bStabilized && StreamProbe.IsStable(Now);
+	const bool bLateGop = StreamInfo.bStabilized && !StreamInfo.bMeasuredGop && StreamProbe.HasGop();
+	if (!bFrameFormatObserved || bFormatChanged)
+	{
+		StreamInfo.SourceSize = Size;
+		const char* Format = av_get_pix_fmt_name(static_cast<AVPixelFormat>(Transferred->format));
+		StreamInfo.FramePixelFormat = Format != nullptr ? UTF8_TO_TCHAR(Format) : TEXT("미확인");
+		if (StreamInfo.PixelFormat.IsEmpty() || bFormatChanged)
+		{
+			DTCctvDescribePixelFormat(CodecContext->sw_pix_fmt, StreamInfo);
+			if (StreamInfo.PixelFormat.IsEmpty())
+			{
+				DTCctvDescribePixelFormat(static_cast<AVPixelFormat>(Transferred->format), StreamInfo);
+			}
+		}
+		StreamInfo.DecoderName = DecoderName;
+		if (bSoftwareFormatFallback.load())
+		{
+			StreamInfo.DecoderReason = TEXT("HW 형식 초기화 실패 후 유효 SW 형식 선택");
+		}
+		bFrameFormatObserved = true;
+		InfoFrameSize = Size;
+		InfoFrameFormat = Transferred->format;
+		InfoRevision.fetch_add(1);
+	}
+	if (bStableUpdate || bLateGop)
+	{
+		StreamProbe.Fill(StreamInfo, VideoPayloadBytes.load(), Now);
+		InfoRevision.fetch_add(1);
+	}
+	bInfoProbeComplete = StreamInfo.bStabilized && StreamInfo.bMeasuredGop;
+}
+
+void FDTCctvSession::SetError(const FString& Stage, int32 Error)
+{
+	FString Detail = AvErrorString(Error);
+	if (Error == AVERROR_HTTP_UNAUTHORIZED) { Detail = TEXT("인증 실패(401)"); }
+	else if (Error == AVERROR_HTTP_FORBIDDEN) { Detail = TEXT("접근 거부(403)"); }
+	else if (Error == AVERROR_HTTP_NOT_FOUND) { Detail = TEXT("스트림 경로 없음(404)"); }
+	else if (Error == AVERROR(ETIMEDOUT)) { Detail = TEXT("연결 또는 수신 시간 초과"); }
+	else if (Error == AVERROR(ECONNREFUSED)) { Detail = TEXT("포트 연결 거부"); }
+	else if (Error == AVERROR_DECODER_NOT_FOUND) { Detail = TEXT("코덱 미지원"); }
+	const FString Message = DTCctvMaskUrlCredentials(Stage + TEXT(": ") + Detail);
+	{
+		FScopeLock ScopeLock(&Lock);
+		if (LastError == Message)
+		{
+			return;
+		}
+		LastError = Message;
+		LastErrorCode = Error;
+	}
+	UE_LOG(LogDTCctv, Warning, TEXT("%s: %s"), *DTCctvMaskUrlCredentials(Params.Url), *Message);
 }
 
 void FDTCctvSession::Retire(TSharedPtr<FDTCctvSession, ESPMode::ThreadSafe> Session)
@@ -399,6 +562,7 @@ void FDTCctvSession::ReaderMain()
 
 		if (bOpened && !bStop.load())
 		{
+			CaptureConnectionInfo();
 			Queue.Reset();
 			DecoderWorker = MakeUnique<FWorker>([this]() { DecoderMain(); });
 			DecoderThread.Reset(FRunnableThread::Create(DecoderWorker.Get(), TEXT("DTCctvDecode")));
@@ -445,6 +609,13 @@ bool FDTCctvSession::OpenInput()
 	ExtendDeadline(Params.ConnectTimeoutSeconds);
 
 	FormatContext = avformat_alloc_context();
+	if (FormatContext != nullptr)
+	{
+		FScopeLock RegistryLock(&SdpRegistryLock);
+		RegisteredSdpContext = FormatContext;
+		SdpRegistry.Add(FormatContext, this);
+		SdpInfo = FDTCctvStreamInfo();
+	}
 	if (FormatContext == nullptr)
 	{
 		return false;
@@ -471,14 +642,14 @@ bool FDTCctvSession::OpenInput()
 	if (OpenError < 0)
 	{
 		// 실패하면 FFmpeg가 컨텍스트를 해제하고 nullptr로 만든다.
-		UE_LOG(LogDTCctv, Warning, TEXT("%s: 연결 실패 (%s)"), *SafeUrl, *AvErrorString(OpenError));
+		SetError(TEXT("연결 실패"), OpenError);
 		return false;
 	}
 
 	const int32 InfoError = avformat_find_stream_info(FormatContext, nullptr);
 	if (InfoError < 0)
 	{
-		UE_LOG(LogDTCctv, Warning, TEXT("%s: 스트림 분석 실패 (%s)"), *SafeUrl, *AvErrorString(InfoError));
+		SetError(TEXT("스트림 분석 실패"), InfoError);
 		return false;
 	}
 
@@ -567,12 +738,7 @@ bool FDTCctvSession::TryOpenDecoder(const AVCodec* Codec, AVHWDeviceType HwType)
 
 	const AVRational FrameRate = av_guess_frame_rate(FormatContext, Stream, nullptr);
 	NominalFps.store(FrameRate.den != 0 ? FMath::Max(0.0, av_q2d(FrameRate)) : 0.0);
-	UE_LOG(LogDTCctv, Log, TEXT("%s: 코덱=%s 해상도=%dx%d FPS=%.2f 디코딩=%s"),
-		*DTCctvMaskUrlCredentials(Params.Url),
-		*Codecname,
-		Stream->codecpar->width, Stream->codecpar->height,
-		FrameRate.den != 0 ? av_q2d(FrameRate) : 0.0,
-		*Decoder);
+
 	return true;
 }
 
@@ -580,6 +746,7 @@ bool FDTCctvSession::OpenDecoder()
 {
 	const AVStream* Stream = FormatContext->streams[VideoStreamIndex];
 	const AVCodec* Codec = avcodec_find_decoder(Stream->codecpar->codec_id);
+	DecoderReason = Params.DecodeMode == EDTCctvDecodeMode::SoftwareOnly ? TEXT("사용자 소프트웨어 지정") : TEXT("이전 HW 장애로 소프트웨어 유지");
 	if (Codec == nullptr)
 	{
 		UE_LOG(LogDTCctv, Warning, TEXT("%s: 지원하지 않는 코덱입니다: %s"),
@@ -589,6 +756,7 @@ bool FDTCctvSession::OpenDecoder()
 
 	if (Params.DecodeMode == EDTCctvDecodeMode::Auto && !bForceSoftware)
 	{
+		DecoderReason = TEXT("HW 슬롯 초과");
 		if (ActiveHwSessions.fetch_add(1) < Params.MaxHardwareDecodeStreams)
 		{
 			bHoldsHwSlot = true;
@@ -596,10 +764,12 @@ bool FDTCctvSession::OpenDecoder()
 			{
 				if (TryOpenDecoder(Codec, HwType))
 				{
+					DecoderReason = TEXT("지원 HW 장치 선택");
 					return true;
 				}
 			}
 			bHoldsHwSlot = false;
+			DecoderReason = TEXT("HW 형식 미지원 또는 장치 초기화 실패");
 		}
 		ActiveHwSessions.fetch_sub(1);
 	}
@@ -646,7 +816,7 @@ void FDTCctvSession::ReadLoop()
 		{
 			if (!bStop.load())
 			{
-				UE_LOG(LogDTCctv, Warning, TEXT("%s: 수신이 끊겼습니다 (%s)"), *SafeUrl, *AvErrorString(ReadResult));
+				SetError(TEXT("수신 중단"), ReadResult);
 			}
 			break;
 		}
@@ -658,6 +828,7 @@ void FDTCctvSession::ReadLoop()
 				FirstKeyPacketSeconds = NowSeconds();
 			}
 			PacketsReceived.fetch_add(1);
+			VideoPayloadBytes.fetch_add(FMath::Max(0, Packet->size));
 			Queue.Push(Packet);
 		}
 		av_packet_unref(Packet);
@@ -700,6 +871,15 @@ void FDTCctvSession::CloseConnection()
 		ExtendDeadline(CloseDeadlineSeconds);
 		avformat_close_input(&FormatContext);
 	}
+	if (RegisteredSdpContext != nullptr)
+	{
+		FScopeLock RegistryLock(&SdpRegistryLock);
+		if (SdpRegistry.FindRef(RegisteredSdpContext) == this)
+		{
+			SdpRegistry.Remove(RegisteredSdpContext);
+		}
+		RegisteredSdpContext = nullptr;
+	}
 	VideoStreamIndex = -1;
 	HwPixelFormat = -1;
 	DTCctvHwDevice::ReleaseUnused();
@@ -723,6 +903,7 @@ void FDTCctvSession::DecoderMain()
 		if (SendResult < 0 && SendResult != AVERROR(EAGAIN))
 		{
 			DecodeErrors.fetch_add(1);
+			SetError(TEXT("디코딩 패킷 오류"), SendResult);
 		}
 
 		for (;;)
@@ -735,6 +916,7 @@ void FDTCctvSession::DecoderMain()
 			if (ReceiveResult < 0)
 			{
 				DecodeErrors.fetch_add(1);
+				SetError(TEXT("디코딩 출력 오류"), ReceiveResult);
 				break;
 			}
 			OutputFrame(Decoded);
@@ -769,6 +951,7 @@ void FDTCctvSession::OutputFrame(AVFrame* Decoded)
 		}
 	}
 
+	ObserveFrameInfo(Decoded, Output);
 	const FIntPoint FrameSourceSize(Output->width, Output->height);
 	FIntPoint WantedSize;
 	{

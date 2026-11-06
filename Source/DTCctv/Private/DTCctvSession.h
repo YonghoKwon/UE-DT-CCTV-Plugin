@@ -6,6 +6,7 @@
 #include "DTCctvPolicies.h"
 #include "DTCctvTypes.h"
 #include "DTCctvVideoFrame.h"
+#include "DTCctvInfoUtils.h"
 #include "HAL/CriticalSection.h"
 #include <atomic>
 
@@ -57,6 +58,9 @@ public:
 	void FillStats(FDTCctvStreamStats& Stats) const;
 	void RecordFrameSubmitted(double DecodedSeconds, double SubmittedSeconds);
 	void ResetFrameAgeStats();
+	FDTCctvStreamInfo GetStreamInfo() const;
+	uint64 GetInfoRevision() const { return InfoRevision.load(); }
+	static void CaptureSdpLog(void* Context, const FString& Message);
 
 	/** 세션을 넘겨받아 스레드가 끝나면 해제한다. 게임 스레드에서 호출한다. */
 	static void Retire(TSharedPtr<FDTCctvSession, ESPMode::ThreadSafe> Session);
@@ -85,6 +89,9 @@ private:
 
 	void DecoderMain();
 	void OutputFrame(AVFrame* Decoded);
+	void CaptureConnectionInfo();
+	void ObserveFrameInfo(AVFrame* Frame, AVFrame* Transferred);
+	void SetError(const FString& Stage, int32 Error);
 
 	void ExtendDeadline(double Seconds);
 
@@ -137,4 +144,18 @@ private:
 	double LastConsumerTakeSeconds = 0.0;
 	FString CodecName;
 	FString DecoderName;
+	FString DecoderReason;
+	FString LastError;
+	int32 LastErrorCode = 0;
+	FDTCctvStreamInfo StreamInfo;
+	FDTCctvStreamInfo SdpInfo;
+	FDTCctvStreamProbe StreamProbe;
+	std::atomic<uint64> InfoRevision{ 0 };
+	std::atomic<int64> VideoPayloadBytes{ 0 };
+	AVFormatContext* RegisteredSdpContext = nullptr;
+	int32 ConnectionNumber = 0;
+	bool bFrameFormatObserved = false;
+	bool bInfoProbeComplete = false;
+	FIntPoint InfoFrameSize = FIntPoint::ZeroValue;
+	int32 InfoFrameFormat = -1;
 };

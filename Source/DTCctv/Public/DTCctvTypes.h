@@ -87,6 +87,12 @@ struct FDTCctvStreamStats
 	FString DecoderName;
 
 	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
+	FString LastError;
+
+	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
+	int32 LastErrorCode = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
 	float DecodeFps = 0.f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")

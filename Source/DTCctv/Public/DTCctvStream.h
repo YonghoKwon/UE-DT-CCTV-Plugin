@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "DTCctvTypes.h"
+#include "DTCctvStreamInfo.h"
 #include "Tickable.h"
 #include "UObject/Object.h"
 #include <atomic>
@@ -44,6 +45,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "DTCctv")
 	FDTCctvStreamStats GetStats() const;
 
+	UFUNCTION(BlueprintPure, Category = "DTCctv")
+	FDTCctvStreamInfo GetStreamInfo() const;
+
 	/** 시험 워밍업 이후 새 지연 표본창을 시작한다. 기존 프레임·손실 카운터는 보존한다. */
 	void ResetFrameAgeStats();
 
@@ -77,6 +81,7 @@ private:
 	void UpdateOutputSize(FIntPoint FrameSize);
 	void RenderLatestFrame();
 	void UpdateStats();
+	void LogStreamInfo();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextureRenderTarget2D> Texture;
@@ -108,4 +113,10 @@ private:
 	double SmoothedTickSeconds = 0.0;
 	int64 StatsWindowDecoded = 0;
 	int64 StatsWindowDisplayed = 0;
+	TWeakPtr<FDTCctvSession, ESPMode::ThreadSafe> InfoSession;
+	uint64 LoggedInfoRevision = 0;
+	FDTCctvStreamInfo LoggedInfo;
+	bool bLoggedConnectionInfo = false;
+	bool bLoggedStabilized = false;
+	bool bLoggedGop = false;
 };

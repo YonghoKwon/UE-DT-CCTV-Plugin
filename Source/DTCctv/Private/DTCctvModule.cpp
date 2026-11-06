@@ -7,6 +7,7 @@
 #include "Modules/ModuleManager.h"
 #include <atomic>
 #include <cstdarg>
+#include <cstdio>
 
 DEFINE_LOG_CATEGORY(LogDTCctv);
 
@@ -15,6 +16,21 @@ namespace
 	/** FFmpeg 오류를 UE 로그로 옮긴다. 손상된 스트림에서 로그가 넘치지 않도록 초당 10건으로 제한한다. */
 	void FFmpegLogCallback(void* Avcl, int Level, const char* Format, va_list Args)
 	{
+		if (Level == AV_LOG_VERBOSE && FCStringAnsi::Strstr(Format, "SDP:") != nullptr)
+		{
+			va_list Copy;
+			va_copy(Copy, Args);
+			const int32 Length = vsnprintf(nullptr, 0, Format, Copy);
+			va_end(Copy);
+			if (Length > 0 && Length <= 1024 * 1024)
+			{
+				TArray<char> Sdp;
+				Sdp.SetNumUninitialized(Length + 1);
+				vsnprintf(Sdp.GetData(), Sdp.Num(), Format, Args);
+				FDTCctvSession::CaptureSdpLog(Avcl, UTF8_TO_TCHAR(Sdp.GetData()));
+			}
+			return;
+		}
 		if (Level > AV_LOG_ERROR)
 		{
 			return;
@@ -46,7 +62,8 @@ class FDTCctvModule : public IModuleInterface
 public:
 	virtual void StartupModule() override
 	{
-		av_log_set_level(AV_LOG_ERROR);
+		// SDP만 메모리에서 수집하며, 나머지 상세 로그는 콜백에서 버린다.
+		av_log_set_level(AV_LOG_VERBOSE);
 		av_log_set_callback(&FFmpegLogCallback);
 		avformat_network_init();
 		UE_LOG(LogDTCctv, Log, TEXT("FFmpeg %s"), UTF8_TO_TCHAR(av_version_info()));
