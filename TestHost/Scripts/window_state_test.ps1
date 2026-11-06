@@ -1,4 +1,4 @@
-param([ValidateSet('W1','W2','W3','W4','W5')][string]$Condition,[string]$Tag,[string]$ReportRoot='', [int]$PowerBits=5,
+﻿param([ValidateSet('W1','W2','W3','W4','W5')][string]$Condition,[string]$Tag,[string]$ReportRoot='', [int]$PowerBits=5,
     [string]$PackageExe='', [ValidateSet(-1,0,1)][int]$IgnoreTimerThrottling=-1)
 $ErrorActionPreference='Stop'
 $OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new()
