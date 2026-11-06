@@ -87,12 +87,22 @@ function Stop-DTCctvOwnedProcess
 	if ($null -eq $Entry -or $Entry.Process.HasExited) { return }
 	$current = Get-Process -Id $Entry.Id -ErrorAction SilentlyContinue
 	if ($null -eq $current) { return }
-	if ($null -eq $Entry.Started -or $current.StartTime.ToUniversalTime() -ne $Entry.Started -or $current.Path -ne $Entry.Path)
+	try
 	{
-		throw "PID $($Entry.Id)의 소유권을 확인할 수 없어 종료하지 않았습니다."
+		if ($null -eq $Entry.Started -or $current.StartTime.ToUniversalTime() -ne $Entry.Started -or $current.Path -ne $Entry.Path)
+		{
+			if ($Entry.Process.HasExited -or $current.HasExited) { return }
+			throw "PID $($Entry.Id)의 소유권을 확인할 수 없어 종료하지 않았습니다."
+		}
+		Stop-Process -Id $Entry.Id -Force -ErrorAction Stop
+		$Entry.Process.WaitForExit()
 	}
-	Stop-Process -Id $Entry.Id -Force -ErrorAction Stop
-	$Entry.Process.WaitForExit()
+	catch
+	{
+		# 조회 도중 스스로 종료한 관측기는 정리 실패가 아니다. 살아 있는 다른 PID는 계속 거부한다.
+		if ($Entry.Process.HasExited -or $null -eq (Get-Process -Id $Entry.Id -ErrorAction SilentlyContinue)) { return }
+		throw
+	}
 }
 
 function Close-DTCctvOwnedProcesses

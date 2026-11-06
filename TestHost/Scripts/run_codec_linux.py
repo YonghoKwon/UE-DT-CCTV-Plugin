@@ -23,6 +23,7 @@ def main():
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command[0] == '--' else args.command
+    args.out.with_suffix('.launch.json').write_text(json.dumps(dict(command=command)),encoding='utf-8')
     process = subprocess.Popen(command)
     start, _, _ = process_stat(process.pid)
     args.out.with_suffix('.process.json').write_text(json.dumps(dict(pid=process.pid,start_ticks=start,path=command[0])),encoding='utf-8')

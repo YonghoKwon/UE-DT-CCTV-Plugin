@@ -65,11 +65,14 @@ def png_tiles(path):
             non_black.append(lit)
     return {"width": width, "height": height, "non_black_tiles": sum(non_black)}
 
-def analyze(folder, scope, code, timed_out):
+def analyze(folder, scope, code, timed_out, expected_codec="", source_fps=60, codec_mode=False):
     result = {"status": "FAIL", "scope": scope, "exit_code": code, "timed_out": timed_out,
               "platform": platform.platform(), "known_limits": [], "failures": []}
     if scope == "software":
         result["known_limits"].append("소프트웨어 로더·디코딩 범위만 확인. Vulkan/NVDEC/렌더링 NOT_RUN.")
+    elif scope == "decode":
+        result["known_limits"].append("nullrhi 자동 디코딩만 확인. Vulkan·표시 FPS·age·대체율·색·PNG NOT_RUN.")
+    result.update(expected_codec=expected_codec, source_fps=source_fps, codec_mode=codec_mode)
     try:
         rows = list(csv.DictReader((folder/"samples.csv").open(encoding="utf-8-sig")))
         steady = [r for r in rows if float(r["t"]) >= 10]
@@ -79,6 +82,7 @@ def analyze(folder, scope, code, timed_out):
             decode_fps=(int(last["decoded"])-int(first["decoded"]))/(16*seconds),
             display_fps=(int(last["displayed"])-int(first["displayed"]))/(16*seconds),
             dropped=max(int(r["dropped"]) for r in rows),
+            errors=max(int(r["errors"]) for r in rows),
             reconnects=max(int(r["reconnects"]) for r in rows),
             superseded=max(int(r["superseded"]) for r in rows),
             all_playing=all(int(r["playing"]) == 16 for r in steady))
@@ -88,16 +92,46 @@ def analyze(folder, scope, code, timed_out):
         result["cuda_channels"] = sum(r["decoder"] == "cuda" for r in latest)
         result["software_channels"] = sum(r["decoder"] == "software" for r in latest)
         result["channels"] = [{k: r[k] for k in ("channel", "decoder", "decode_fps", "display_fps", "decoded")} for r in latest]
-        if code or timed_out or seconds < 60 or not result["all_playing"]:
-            result["failures"].append("정상 종료·60초·16 Playing 기준 미달")
-        if result["decode_fps"] < 58 or result["dropped"] or result["reconnects"]:
+        minimum_seconds = 80 if codec_mode else 60
+        fps_limit = source_fps*97/100 if codec_mode else 58
+        result.update(fps_limit=fps_limit,minimum_seconds=minimum_seconds)
+        if code or timed_out or seconds < minimum_seconds or not result["all_playing"]:
+            result["failures"].append("정상 종료·측정 시간·16 Playing 기준 미달")
+        if result["decode_fps"] < fps_limit or result["dropped"] or result["reconnects"] or (codec_mode and result["errors"]):
             result["failures"].append("디코딩 FPS·손실·재연결 기준 미달")
+        if codec_mode:
+            per_channel=[]
+            for channel in range(16):
+                group=[r for r in channels if int(r["channel"])==channel and float(r["t"])>=10]
+                a,b=group[0],group[-1]
+                per_channel.append(dict(channel=channel,codec=b["codec"],decoder=b["decoder"],
+                    decode_fps=(int(b["decoded"])-int(a["decoded"]))/ (float(b["t"])-float(a["t"])),
+                    display_fps=(int(b["displayed"])-int(a["displayed"]))/ (float(b["t"])-float(a["t"]))))
+            result["codec_channels"]=per_channel
+            if any(r["decode_fps"]<fps_limit for r in per_channel):
+                result["failures"].append("채널별 원본97% 디코딩 기준 미달")
+            if expected_codec and any(r["codec"]!=expected_codec for r in per_channel):
+                result["failures"].append("요청 코덱 불일치")
+            if scope=="software" and result["software_channels"]!=16:
+                result["failures"].append("소프트웨어16 기준 미달")
+        if scope=="decode" and (result["cuda_channels"]!=4 or result["software_channels"]!=12):
+            result["failures"].append("CUDA4/SW12 기준 미달")
         if scope == "gpu":
             result["screenshot"] = png_tiles(folder/"final.png")
             if result["cuda_channels"] != 4 or result["software_channels"] != 12:
                 result["failures"].append("기본 CUDA4/SW12 기준 미달")
-            if result["display_fps"] < 58 or result["superseded"]:
+            if result["display_fps"] < fps_limit or (not codec_mode and result["superseded"]):
                 result["failures"].append("표시 FPS·프레임 대체 기준 미달")
+            if codec_mode:
+                if any(r["display_fps"]<fps_limit for r in result["codec_channels"]):
+                    result["failures"].append("채널별 원본97% 표시 기준 미달")
+                decoded_delta=int(last["decoded"])-int(first["decoded"])
+                superseded_delta=int(last["superseded"])-int(first["superseded"])
+                if superseded_delta/max(1,decoded_delta)>.01:
+                    result["failures"].append("대체율1% 기준 미달")
+                age_limit=70 if source_fps==30 else 50
+                if any(float(r["frame_age_p95_ms"])>age_limit for r in latest):
+                    result["failures"].append("채널별 frame age p95 기준 미달")
             if result["screenshot"] != {"width": 1920, "height": 1080, "non_black_tiles": 16}:
                 result["failures"].append("1920x1080·16개 비검은 영상 표본 기준 미달")
             text = (folder/"game.log").read_text(encoding="utf-8", errors="replace")
@@ -116,4 +150,6 @@ if __name__ == "__main__":
             sys.stdout.write(redact(line))
             sys.stdout.flush()
     else:
-        raise SystemExit(analyze(Path(sys.argv[2]), sys.argv[3], int(sys.argv[4]), int(sys.argv[5])))
+        raise SystemExit(analyze(Path(sys.argv[2]), sys.argv[3], int(sys.argv[4]), int(sys.argv[5]),
+            sys.argv[6] if len(sys.argv)>6 else "", int(sys.argv[7]) if len(sys.argv)>7 else 60,
+            bool(int(sys.argv[8])) if len(sys.argv)>8 else False))
