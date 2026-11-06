@@ -125,7 +125,9 @@ CCTV-01J 후속 실제 입력 시험에서는 `OpenInputDesktop`의 입력 데�
 
 Windows는 FFmpeg DLL 5개, Linux는 SONAME 파일 5개를 실행 바이너리 옆에 스테이징합니다. Linux의 확장자 `.so` 파일은 버전 파일을 가리키는 텍스트 링커 스크립트입니다. 이를 바이너리로 교체하거나 버전 라이브러리를 빼면 안 됩니다. 자세한 버전·LGPL 정보는 [동봉 FFmpeg 설명](Source/ThirdParty/DTCctvFFmpeg/README.md)에 있습니다.
 
-**기존 FFMPEGMedia 플러그인과 함께 사용하지 말 것.** 이 조합은 시험 대상에서 제외했습니다. Pixel Streaming을 활성화한 Windows·Linux 빌드의 마운트와 16채널 재생을 확인했습니다. 판정 범위는 **"플러그인 로드 공존만 확인, 실제 스트리밍 동시 부하는 미검증"**입니다. Linux는 nullrhi 소프트웨어 디코딩 범위입니다.
+**기존 FFMPEGMedia와의 설치 공존은 플랫폼별로 결과가 다릅니다.** CCTV-01I 재시험에서 `main(819e004)`을 활성화하고 사용하지 않는 Windows 조건의 DTCctv 16채널은 표시 59.9398fps로 통과했습니다. 구 `avdevice-58.dll` 로드 실패는 별도로 남아 있습니다. Linux 공존 패키징은 구 FFmpeg API 미해결 심볼로 실패했습니다. 운영본 동기화 브랜치 `feature/dt-project-sync(ea78883)`는 철자 오타 5줄 수정 후에도 오디오 패킷 상수 미선언으로 빌드에 실패했습니다. 자세한 범위와 근거는 [공존 재시험 기록](docs/FFMPEG_MEDIA_COEXISTENCE.md)을 참조하십시오.
+
+Pixel Streaming을 활성화한 Windows·Linux 단독 빌드의 마운트와 16채널 재생을 확인했습니다. 판정 범위는 **"플러그인 로드 공존만 확인, 실제 스트리밍 동시 부하는 미검증"**입니다. Linux 단독 시험은 nullrhi 소프트웨어 디코딩 범위이며, 위 FFMPEGMedia 공존 빌드 실패와 구분합니다.
 
 ## Linux 드라이버와 서버 점검
 
