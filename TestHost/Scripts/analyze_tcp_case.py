@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """TCP 대조 실험의 원시 표본을 요약한다. 미달값과 실행 오류를 구분한다."""
 from pathlib import Path
-import argparse,csv,json,re,statistics
+import argparse,csv,datetime as dt,json,re,statistics
 
 def textfile(path):
     data=path.read_bytes()
@@ -15,8 +15,8 @@ def analyze(case):
     is_plugin=execution['mode'].startswith('plugin')
     recovered=is_plugin and runtime.get('exit_codes')==[2] and '점검 결과 WARN' in (case/'game.log').read_text(encoding='utf-8-sig',errors='replace')
     if execution['status']!='MEASURED' and not recovered:
-        value.update(status='NOT_MEASURED',failures=[execution['note']]);return value
-    allowed=(0,2) if is_plugin else (0,)
+        value.update(status=execution['status'] if execution['status'] in ('ENV_BLOCKED','INVALID','BLOCKED_BY_OTHER_WORK') else 'NOT_MEASURED',failures=[execution['note']]);return value
+    allowed=(0,1,2) if is_plugin else (0,)
     if any(code not in allowed for code in runtime.get('exit_codes',[])):fail.append('수신기 오류 종료 코드: '+str(runtime['exit_codes']))
     files=sorted(case.rglob('channel-*.csv')) if is_plugin else sorted(case.glob('receiver-*.jsonl'))
     for path in files:
@@ -30,7 +30,7 @@ def analyze(case):
         fps=(int(b[key])-int(a[key]))/seconds if seconds>0 else 0
         item=dict(file=str(path.relative_to(case)),seconds=seconds,fps=fps,errors=int(b['errors']))
         if is_plugin:
-            item.update(reconnects=int(b['reconnects']),dropped=int(b['dropped']),playing=all(int(r['state'])==2 for r in eligible),
+            item.update(channel=int(re.search(r'channel-(\d+)',path.name)[1]),state_at_end=int(b['state']),reconnects=int(b['reconnects']),dropped=int(b['dropped']),playing=all(int(r['state'])==2 for r in eligible),
                 peak_queued_packets=int(b['peak_queued_packets']),queued_packets_max=max(int(r['queued_packets']) for r in eligible),
                 read_wait_fraction=(float(b['read_wait_seconds'])-float(a['read_wait_seconds']))/seconds,
                 read_wait_max_seconds=float(b['read_wait_max_seconds']),read_gap_max_seconds=float(b['read_gap_max_seconds']),
@@ -41,10 +41,11 @@ def analyze(case):
         if item['errors']:fail.append(path.name+' 디코딩/읽기 오류')
         channels.append(item)
     if len(channels)!=execution['channels']:fail.append('채널 수 불일치')
-    socket_samples=[]
+    socket_samples=[];rtts=[]
     for path in sorted(case.glob('ss-*.log')):
         text=textfile(path)
         socket_samples+=re.findall(r'ESTAB\s+(\d+)\s+\d+[^\n]*:8554\s*\n\s*skmem:\(r(\d+),rb(\d+),[^\n]*',text)
+        rtts += [float(x) for x in re.findall(r'\brtt:([0-9.]+)/',text)]
     rawresources=[json.loads(x) for x in (case/'resources.jsonl').read_text(encoding='utf-8').splitlines() if x.strip()]
     cpu=[];rss=[];threadmax=0;waits={}
     for a,b in zip(rawresources,rawresources[1:]):
@@ -62,12 +63,30 @@ def analyze(case):
         slow+=re.findall(r'[^\n]*reader is too slow[^\n]*',path.read_text(encoding='utf-8-sig',errors='replace'))
     logs=[case/'game.log'] if is_plugin else list(case.glob('child-*.log'))
     warnings=sum(len(re.findall(r'error while decoding|co located POCs unavailable|concealing .* errors|Invalid NAL|decode_slice_header error|non-existing PPS',textfile(p))) for p in logs if p.exists())
-    actual_decoders={}
+    actual_decoders={};reported_decoders={};warning_timing=None
     if is_plugin:
         for path in case.rglob('report.json'):
             report=json.loads(path.read_text(encoding='utf-8-sig'))
+            logtext=textfile(case/'game.log')
+            finish=re.search(r'\[([0-9.:-]+)\]\[.*?LogDTCctvCheck: 점검 결과',logtext)
+            if finish:
+                start=dt.datetime.strptime(finish[1],'%Y.%m.%d-%H.%M.%S:%f')-dt.timedelta(seconds=report['duration_seconds'])
+                stamps=[]
+                for line in logtext.splitlines():
+                    if re.search(r'error while decoding|co located POCs unavailable|concealing .* errors|Invalid NAL|decode_slice_header error|non-existing PPS',line):
+                        m=re.search(r'^\[([0-9.:-]+)\]',line)
+                        if m:stamps.append((dt.datetime.strptime(m[1],'%Y.%m.%d-%H.%M.%S:%f')-start).total_seconds())
+                warning_timing=dict(startup_events=sum(t<10 for t in stamps),steady_events=sum(t>=10 for t in stamps),
+                    method='점검 결과 로그 시각에서 report.duration_seconds를 뺀 시작 시각 기준. 보고서 쓰기 지연만큼 근사이며 경고 합격 기준을 바꾸지 않음.')
+            if report.get('verdict')=='FAIL':fail.append('점검기의 원시 판정 FAIL(종료1). 크래시와 구분')
             for channel in report.get('channels',[]):
-                name=channel.get('stream_info',{}).get('decoderName','미확인');actual_decoders[name]=actual_decoders.get(name,0)+1
+                name=channel.get('stream_info',{}).get('decoderName','미확인');reported_decoders[name]=reported_decoders.get(name,0)+1
+                last=next((p for p in channels if p.get('channel')==channel['channel']),{})
+                if last.get('state_at_end')==2:actual_decoders[name]=actual_decoders.get(name,0)+1
+        if not reported_decoders and (case/'game.log').exists():
+            for name in re.findall(r'연결정보[^\n]*디코딩=([A-Za-z0-9_]+)',textfile(case/'game.log')):
+                reported_decoders[name]=reported_decoders.get(name,0)+1
+            if all(p.get('state_at_end')==2 for p in channels):actual_decoders=dict(reported_decoders)
     decoder_aligned=True
     if execution['mode']=='decode':
         metas=[json.loads(p.read_text(encoding='utf-8')) for p in case.glob('receiver-*.meta.json')]
@@ -76,7 +95,9 @@ def analyze(case):
     value.update(status='INVALID' if not decoder_aligned else 'FAIL' if fail else 'PASS',measurement_valid=decoder_aligned,execution_reassessment='점검 종료2의 WARN을 실행 실패로 오해한 원시 상태 보존,120초 이상 CSV로 디코딩 범위 재판정' if recovered else None,failures=fail,channel_metrics=channels,decode_or_copy_fps_mean=statistics.mean(x['fps'] for x in channels) if channels else None,
         decode_or_copy_fps_min=min((x['fps'] for x in channels),default=None),cpu_mean_percent_of_16=statistics.mean(cpu) if cpu else None,
         rss_peak_mib=max(rss,default=None),threads_peak=threadmax,thread_wait_samples=waits,reader_too_slow_events=len(slow),
-        ffmpeg_decode_warning_events=warnings,actual_decoders=actual_decoders,socket=dict(samples=len(socket_samples),recv_q_max_bytes=max((int(x[0]) for x in socket_samples),default=None),
+        ffmpeg_decode_warning_events=warnings,ffmpeg_warning_timing=warning_timing,actual_decoders=actual_decoders,reported_decoder_names=reported_decoders,
+        decoder_metadata_note='actual_decoders는 마지막CSV에서Playing인 채널만 집계. reported_decoder_names는 재연결 중 이전 연결의 캐시도 포함하며 동시HW 활성 수가 아님.',
+        socket=dict(samples=len(socket_samples),rtt_median_ms=statistics.median(rtts) if rtts else None,recv_q_max_bytes=max((int(x[0]) for x in socket_samples),default=None),
             rmem_alloc_max_bytes=max((int(x[1]) for x in socket_samples),default=None),receive_buffer_min_bytes=min((int(x[2]) for x in socket_samples),default=None),receive_buffer_max_bytes=max((int(x[2]) for x in socket_samples),default=None)),
         limits=['Linux nullrhi 디코딩 범위. 표시·렌더링 미검증.','FFmpeg 복사는 비디오 패킷 수신 후 해제, 디코딩은 SW2스레드이며 색 변환·출력 없음.','CPU는16논리 프로세서 정규화. 소켓 rb는 커널 회계값이며 Linux SO_RCVBUF 배수에 주의.'])
     return value

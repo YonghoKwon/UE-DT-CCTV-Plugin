@@ -34,6 +34,7 @@ def main():
     bind(u,'av_log_set_level',None,[i])(24)
     version=bind(u,'av_version_info',c.c_char_p,[])().decode()
     findopt=bind(u,'av_opt_find',ptr,[ptr,c.c_char_p,c.c_char_p,i,i])
+    getint=bind(u,'av_opt_get_int',i,[ptr,c.c_char_p,i,c.POINTER(c.c_int64)])
     if bind(f,'avformat_version',c.c_uint,[])()>>16 !=62:raise RuntimeError('헤더 ABI62와 실제 라이브러리가 다릅니다.')
     fmt=ptr(alloc());options=ptr();codec=ptr();pkt=ptr();frame=ptr();dec=ptr()
     def check(code):
@@ -56,10 +57,15 @@ def main():
             check(codecopen(codec,dec,c.byref(opts)));freedict(c.byref(opts));frame=ptr(frame_alloc())
         pkt=ptr(packet_alloc());began=time.monotonic();next_sample=began;packets=frames=errors=0;wait=waitmax=0
         supported={name:bool(findopt(fmt,name.encode(),None,0,1)) for name in ('recv_buffer_size','buffer_size')}
-        (args.out.with_suffix('.meta.json')).write_text(json.dumps(dict(pid=os.getpid(),mode=args.mode,version=version,options=config,unconsumed_options=leftover,rtsp_option_visible=supported,decoder_options={'threads':2,'thread_type':'frame+slice','low_delay':False} if args.mode=='decode' else None,scope='C1 B2 전용. 복사는 비디오 패킷을 수신 후 해제, 디코딩은 SW2스레드·표시/색 변환 없음',started_epoch=time.time()),ensure_ascii=False,indent=2),encoding='utf-8')
+        observed={}
+        for name in supported:
+            val=c.c_int64();code=getint(fmt,name.encode(),1,c.byref(val));observed[name]=dict(code=code,value=val.value if code>=0 else None)
+        (args.out.with_suffix('.meta.json')).write_text(json.dumps(dict(pid=os.getpid(),mode=args.mode,version=version,options=config,unconsumed_options=leftover,rtsp_option_visible=supported,rtsp_option_values=observed,public_avio_context=bool(c.cast(fmt,c.POINTER(Format)).contents.pb),decoder_options={'threads':2,'thread_type':'frame+slice','low_delay':False} if args.mode=='decode' else None,scope='C1 B2 전용. 복사는 비디오 패킷을 수신 후 해제, 디코딩은 SW2스레드·표시/색 변환 없음',started_epoch=time.time()),ensure_ascii=False,indent=2),encoding='utf-8')
         with args.out.open('w',encoding='utf-8',buffering=1) as out:
             while time.monotonic()-began<args.seconds:
                 before=time.monotonic();ret=read(fmt,pkt);end=time.monotonic();wait+=end-before;waitmax=max(waitmax,end-before)
+                if ret==-11:
+                    time.sleep(.002);continue
                 if ret<0:
                     errors+=1
                     out.write(json.dumps(dict(t=end-began,packets=packets,frames=frames,errors=errors,read_error=ret,read_wait_seconds=wait,read_wait_max_seconds=waitmax))+'\n');break

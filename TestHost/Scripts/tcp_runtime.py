@@ -9,7 +9,7 @@ def main():
     out=Path('/reports');out.joinpath('runtime-environment.json').write_text(json.dumps(dict(
         rmem_max=Path('/proc/sys/net/core/rmem_max').read_text() if Path('/proc/sys/net/core/rmem_max').exists() else '네임스페이스에 노출되지 않음',
         tcp_rmem=Path('/proc/sys/net/ipv4/tcp_rmem').read_text(),meminfo=Path('/proc/meminfo').read_text(),
-        sysctl_changed=False),ensure_ascii=False,indent=2),encoding='utf-8')
+        sysctl_changed=bool(os.environ.get('DTCCTV_NAMESPACE_RMEM_DEFAULT_BYTES')),namespace_tcp_rmem_default_bytes=int(os.environ.get('DTCCTV_NAMESPACE_RMEM_DEFAULT_BYTES','0'))),ensure_ascii=False,indent=2),encoding='utf-8')
     children=[];logs=[];records=[]
     def identity(pid):
         text=Path('/proc/{}/stat'.format(pid)).read_text();return text[text.rfind(')')+2:].split()[19]
@@ -57,8 +57,8 @@ def main():
                 time.sleep(1)
         result=dict(status='MEASURED',exit_codes=[child.returncode for child in children],elapsed_seconds=time.monotonic()-began,clock_ticks=os.sysconf('SC_CLK_TCK'),page_size=os.sysconf('SC_PAGE_SIZE'))
         (out/'runtime-result.json').write_text(json.dumps(result,indent=2))
-        # 점검 화면의2는 WARN/FAIL 판정 코드이며 크래시가 아니다. 원시 코드와 판정은 보고서에서 별도로 보존한다.
-        return 0 if all(child.returncode==0 or (args.mode.startswith('plugin') and child.returncode==2) for child in children) else 1
+        # 점검 화면의1/2는 FAIL/WARN 판정 코드다. 원시 코드와 판정은 보고서에서 별도로 보존한다.
+        return 0 if all(child.returncode==0 or (args.mode.startswith('plugin') and child.returncode in (1,2)) for child in children) else 1
     finally:
         for child,record in zip(children,records):
             if child.poll() is None:

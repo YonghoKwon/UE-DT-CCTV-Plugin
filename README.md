@@ -221,6 +221,28 @@ bash TestHost/Scripts/linux_server_check.sh /path/to/Linux "$RTSP_URL"
 
 입력은 패키지 경로와 RTSP URL이며 Python3 표준 라이브러리만 필요합니다(`python3` 또는 RHEL의 `/usr/libexec/platform-python`). 새 하네스의 `-CctvUrlEnv`로 인증 URL을 전달해 UE 명령행에 계정을 넣지 않고, 로그 URI와 Authorization을 가립니다. 임시 사용자 디렉터리는 자체 생성한 경로만 정리합니다. 기본 점검은 16채널·60초 이상·CUDA4/SW12·58fps·손실/재연결/프레임 대체0·1920x1080 비검은 타일 표본을 확인해 PASS/FAIL을 기록합니다. 입력 카메라는 1080p60 조건이어야 합니다. `--software-only`는 로더·SW 디코딩 범위만 확인하며 GPU 렌더링 합격을 뜻하지 않습니다. 이 PC에서 구문·가림 처리와 실제 SW 실행(69.3초, decode59.984fps, 16Playing)을 확인했습니다. 기본 GPU 점검의 실제 서버 실행은 NOT_RUN입니다.
 
+<!-- CCTV-01T-BEGIN -->
+### 지연 TCP 수신 실험(CCTV-01T)
+
+같은 C1 H.264 High1080p30(B2)을 Docker Linux 수신IFB의50ms 지연에서1/4/8/16연결로 비교했습니다. 각160초 실행에서 초기10초를 제외한 채널별 평균/최저fps입니다. 자동 HW상한4, SW2스레드, 기존 FFmpeg와 기본값을 유지했습니다.
+
+| 연결 수 | 플러그인 자동 | 플러그인 SW | FFmpeg 복사 | FFmpeg SW 디코딩 |
+|---:|---:|---:|---:|---:|
+| 1 | 17.676 / 17.676 | 17.850 / 17.850 | 23.224 / 23.224 | 25.131 / 25.131 |
+| 4 | 19.340 / 18.663 | 20.488 / 17.888 | 24.006 / 23.822 | 25.834 / 24.920 |
+| 8 | 21.738 / 18.637 | 21.457 / 19.814 | 24.304 / 23.206 | 26.034 / 23.572 |
+| 16 | 21.641 / 17.118 | 22.718 / 20.579 | 24.411 / 22.428 | 27.276 / 24.479 |
+
+모두29.1fps 또는 재연결/Playing 기준에 미달했습니다. FFmpeg 복사도 미달하고 mediamtx 느린reader가 재현됐으며 플러그인의 패킷 큐/읽기 호출 사이 장시간 정체는 확인하지 못했습니다. 연결 수와 값은 단조적이지 않으며 고지연망의 채널 한계 표가 아닙니다. Linux는nullrhi 디코딩만 검증했고 Docker VM3.82GiB 제약을 유지했습니다.
+
+16채널 현행 자동 모드의 무장애/손실0.5%/손실2%는 약30fps였고150ms·지터30ms는 미달했습니다. K와 지연 주입 시점이 다르므로 K 수치의 정확한 재실행으로 확대하지 않습니다. 현장 원격지·VPN 카메라는 위의 연결 점검 도구로 실제 망의 코덱·채널 수·재연결·표시를 확인하십시오.
+
+TCP 수신 버퍼 옵션 구현은 **차단** 상태입니다. [FFmpeg RTSP 소스](https://raw.githubusercontent.com/FFmpeg/FFmpeg/n8.1.3/libavformat/rtsp.c)의buffer_size는 UDP 쪽으로 전달되고 TCP recv_buffer_size를 노출하지 않습니다. 실제 배포본에서도 recv_buffer_size는 미소비, buffer_size4MiB는 RTSP에 소비돼도 TCP 소켓 버퍼로 적용되지 않았습니다. FDTCctvStreamConfig에 동작하지 않는 옵션을 제공하지 않았으며 FFmpeg 수정·재빌드 범위 결정이 남았습니다. 1MiB/4MiB 제품 성능 비교와 권장값은 미확정이고 기본 동작은 그대로입니다. 컨테이너 tcp_rmem 대조는 제품 옵션의 대체 합격이 아닙니다.
+
+실험 도구는 TestHost/Scripts/tcp_case.ps1, tcp_runtime.py, tcp_receiver.py, analyze_tcp_case.py입니다. 현재 로컬 Saved/Reports/CCTV-01T/configuration.json의 도구·C1·pkg-T·승인 RPM 경로를 사용합니다. 새 태그로 실행하며 기존 자료는 덮어쓰지 않습니다. 각 측정은 공존 검사·단일 잠금·송출 준비 확인·자체 PID/CID 정리를 수행합니다. 결과와 차단 근거는 Saved/Reports/CCTV-01T/RESULT.md 및 result.json에 있습니다.
+
+<!-- CCTV-01T-END -->
+
 ## UMG에서 사용
 
 운영 프로젝트에 부모 클래스가 `UserWidget`인 위젯 블루프린트를 만듭니다.

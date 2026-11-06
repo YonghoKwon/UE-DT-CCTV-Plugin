@@ -1,5 +1,6 @@
 ﻿param([ValidateSet('plugin','plugin-auto','copy','decode')][string]$Mode,[ValidateSet(1,4,8,16)][int]$Count,[string]$Tag,
-    [ValidateSet('N0','N1','N2','N3','N4','N7')][string]$Condition='N1',[ValidateSet('','buffer_size','recv_buffer_size')][string]$Option='', [ValidateRange(0,16777216)][int]$BufferBytes=0)
+    [ValidateSet('N0','N1','N2','N3','N4','N7')][string]$Condition='N1',[ValidateSet('','buffer_size','recv_buffer_size')][string]$Option='', [ValidateRange(0,16777216)][int]$BufferBytes=0,
+    [ValidateSet(0,1048576,4194304)][int]$NamespaceReceiveDefaultBytes=0)
 $ErrorActionPreference='Stop'
 $OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new()
 $env:PYTHONIOENCODING='utf-8'
@@ -25,6 +26,7 @@ $lock=Enter-DTCctvTestLock
 $owned=[Collections.Generic.List[object]]::new();$netId=$null;$playerId=$null
 $cfg=Get-Content -Raw -Encoding UTF8 "$report\configuration.json"|ConvertFrom-Json
 $result=[ordered]@{task_id='CCTV-01T';tag=$Tag;status='FAIL';mode=$Mode;channels=$Count;condition=$Condition;option=$Option;buffer_bytes=$BufferBytes;started_at=(Get-Date -Format o);seconds=160;warmup_seconds=10;note='';sysctl_changed=$false;no_download=$true}
+$result['namespace_tcp_rmem_default_bytes']=$NamespaceReceiveDefaultBytes
 function NetControl([string]$Action,[string]$Scenario='')
 {
     $cmd=@('exec','-e','DTCCTV_NETEM_OWNED=1',$netId,'/bin/sh','/control.sh',$Action)
@@ -64,8 +66,19 @@ try
         '--mount',"type=bind,source=$PSScriptRoot,target=/check,readonly",'--mount',"type=bind,source=$PSScriptRoot\netem_runtime.js,target=/runtime.js,readonly",
         '--mount',"type=bind,source=$PSScriptRoot\netem_control.sh,target=/control.sh,readonly",'--entrypoint','/bin/sh',$cfg.image,
         '-c','DTCCTV_NETEM_OWNED=1 /bin/sh /check/netem_rpm_setup.sh && touch /reports/network.ready && exec sleep 600')
+    if($NamespaceReceiveDefaultBytes -gt 0)
+    {
+        # 새 네트워크 네임스페이스의 TCP 기본 수신 버퍼만 실험한다. net.core·호스트·WSL은 바꾸지 않는다.
+        $imageIndex=[Array]::IndexOf($create,[string]$cfg.image)
+        $create=@($create[0..($imageIndex-1)])+@('--sysctl',"net.ipv4.tcp_rmem=4096 $NamespaceReceiveDefaultBytes 31456480")+@($create[$imageIndex..($create.Length-1)])
+        $result.sysctl_changed=$true
+    }
     $netId=[string](& docker @create 2> "$case\network-create.log")
-    if($LASTEXITCODE -ne 0 -or $netId -notmatch '^[0-9a-f]{64}$'){throw '소유 네트워크 컨테이너 생성 실패'}
+    if($LASTEXITCODE -ne 0 -or $netId -notmatch '^[0-9a-f]{64}$')
+    {
+        if($NamespaceReceiveDefaultBytes -gt 0){$result.status='ENV_BLOCKED'}
+        throw '소유 네트워크 컨테이너 생성 실패. 원문은 network-create.log에 보존'
+    }
     Write-DTCctvJson "$case\network-owned-container.json" @{id=$netId;image=$cfg.image;created_at=(Get-Date -Format o)}
     & docker start $netId *> "$case\network-start.log"
     $deadline=[datetime]::UtcNow.AddSeconds(35)
@@ -74,6 +87,12 @@ try
     NetControl init
     if($Condition -ne 'N0'){NetControl apply $Condition}
     & docker exec $netId /bin/sh -c 'cat /proc/sys/net/core/rmem_max; cat /proc/sys/net/ipv4/tcp_rmem' *> "$case\socket-sysctl.log"
+    if($NamespaceReceiveDefaultBytes -gt 0)
+    {
+        $effective=(& docker exec $netId cat /proc/sys/net/ipv4/tcp_rmem).Trim() -split '\s+'
+        if($effective.Count -ne 3 -or [int]$effective[1] -ne $NamespaceReceiveDefaultBytes){$result.status='ENV_BLOCKED';throw '새 네임스페이스 TCP 기본 버퍼 적용 확인 실패'}
+    }
+    & docker exec $netId nstat -asz *> "$case\nstat-before.log"
     New-Item -ItemType Directory -Force -Path (Join-Path $cfg.packages 'Linux\DTCctvTestHost\Saved')|Out-Null
     $create=@('create','--pull=never','--user','1000:1000','--network',"container:$netId",'--read-only','--tmpfs','/tmp:rw,exec,mode=1777','--label','dtcctv.task=CCTV-01T',
         '--mount',"type=bind,source=$($cfg.packages)\Linux,target=/package,readonly",'--mount',"type=bind,source=$case,target=/reports",
@@ -84,6 +103,11 @@ try
     {
         $imageIndex=[Array]::IndexOf($create,[string]$cfg.image)
         $create=@($create[0..($imageIndex-1)])+@('--gpus','all','--env','NVIDIA_DRIVER_CAPABILITIES=all')+@($create[$imageIndex..($create.Length-1)])
+    }
+    if($NamespaceReceiveDefaultBytes -gt 0)
+    {
+        $imageIndex=[Array]::IndexOf($create,[string]$cfg.image)
+        $create=@($create[0..($imageIndex-1)])+@('--env',"DTCCTV_NAMESPACE_RMEM_DEFAULT_BYTES=$NamespaceReceiveDefaultBytes")+@($create[$imageIndex..($create.Length-1)])
     }
     if($Option){$create+=@('--option',$Option,'--buffer',[string]$BufferBytes)}
     $playerId=[string](& docker @create 2> "$case\player-create.log")
