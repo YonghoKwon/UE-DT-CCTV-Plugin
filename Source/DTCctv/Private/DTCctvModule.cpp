@@ -3,11 +3,20 @@
 #include "DTCctvLog.h"
 #include "DTCctvPolicies.h"
 #include "DTCctvSession.h"
+#include "DTCctvSettings.h"
+#include "DTCctvWindowsTimerPolicy.h"
+#include "Misc/CommandLine.h"
 #include "HAL/PlatformTime.h"
 #include "Modules/ModuleManager.h"
 #include <atomic>
 #include <cstdarg>
 #include <cstdio>
+
+#if DTCCTV_WITH_DTCORE && !WITH_EDITOR
+#include "Core/DxLogSubsystem.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
+#endif
 
 DEFINE_LOG_CATEGORY(LogDTCctv);
 
@@ -64,6 +73,13 @@ public:
 	{
 		// SDP만 메모리에서 수집하며, 나머지 상세 로그는 콜백에서 버린다.
 		DTCctvInitializeLogSink();
+		bool bTimerPolicyWarning = false;
+		TimerPolicyMessage = TimerPolicy.Initialize(GetDefault<UDTCctvSettings>()->bIgnoreWindowsTimerThrottling, FCommandLine::Get(), bTimerPolicyWarning);
+		DTCctvLogEvent(FDTCctvLogContext(), TimerPolicyMessage, bTimerPolicyWarning ? ELogVerbosity::Warning : ELogVerbosity::Log);
+#if DTCCTV_WITH_DTCORE && !WITH_EDITOR
+		// 모듈 시작 때는 GameInstance가 없으므로 DTCore에는 준비된 뒤 한 줄 남긴다.
+		GameInstanceStartedHandle = FWorldDelegates::OnStartGameInstance.AddRaw(this, &FDTCctvModule::LogTimerPolicyToDTCore);
+#endif
 		av_log_set_level(AV_LOG_VERBOSE);
 		av_log_set_callback(&FFmpegLogCallback);
 		avformat_network_init();
@@ -72,12 +88,35 @@ public:
 
 	virtual void ShutdownModule() override
 	{
+#if DTCCTV_WITH_DTCORE && !WITH_EDITOR
+		FWorldDelegates::OnStartGameInstance.Remove(GameInstanceStartedHandle);
+#endif
+		TimerPolicy.Shutdown();
 		FDTCctvSession::ShutdownRetired();
 		DTCctvHwDevice::ReleaseAll();
 		DTCctvShutdownLogSink();
 		avformat_network_deinit();
 		av_log_set_callback(&av_log_default_callback);
 	}
+
+private:
+	FDTCctvWindowsTimerPolicy TimerPolicy;
+	FString TimerPolicyMessage;
+
+#if DTCCTV_WITH_DTCORE && !WITH_EDITOR
+	FDelegateHandle GameInstanceStartedHandle;
+
+	void LogTimerPolicyToDTCore(UGameInstance* GameInstance)
+	{
+		if (IsValid(GameInstance))
+		{
+			if (UDxLogSubsystem* Subsystem = GameInstance->GetSubsystem<UDxLogSubsystem>())
+			{
+				Subsystem->WriteLog(TEXT("[DTCctv] ") + TimerPolicyMessage, false);
+			}
+		}
+	}
+#endif
 };
 
 IMPLEMENT_MODULE(FDTCctvModule, DTCctv);

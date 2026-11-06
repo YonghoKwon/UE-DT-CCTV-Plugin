@@ -32,6 +32,19 @@ CCTV-01J 최종 회귀에서 Windows 16채널 일반 창 측정이 표시 48.5fp
 - 01J의 `package_win_16ch` 일반 창 FAIL을 W1 조건으로 다시 측정해 판정을 갱신한다. 기준은 바꾸지 않는다.
 - README에 운영 권장 사항을 적는다.
 
+## 후속 구현: 타이머 제한 무시 옵션 (2026-11-06 사용자 결정 1번)
+
+진단 결과 원인은 포그라운드가 아닌 창에서 Windows 11이 타이머 해상도 요청을 무시하는 것이었다(W5b 타이머 제한만 해제 시 59.95fps). 사용자는 **옵션으로 제공하고 기본값은 끔**을 선택했다.
+
+- `UDTCctvSettings`(프로젝트 설정)에 `bIgnoreWindowsTimerThrottling`(기본 false)을 추가한다. 이름과 설명은 운영자가 이해할 수 있게 한국어 툴팁을 단다.
+- 켜져 있으면 Windows에서 플러그인 모듈 시작 시 현재 프로세스에 `SetProcessInformation(ProcessPowerThrottling, PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION)`을 적용한다. 실행 속도 제한(EXECUTION_SPEED)은 건드리지 않는다. 실패하면 경고 로그만 남기고 계속 동작한다. 적용 결과를 `LogDTCctv`(와 DTCore 로그)에 한 줄 남긴다.
+- Windows 10처럼 지원하지 않는 버전과 Linux에서는 아무것도 하지 않는다.
+- 명령줄로 덮어쓸 수 있게 한다(예: `-DTCctvIgnoreTimerThrottling=1/0`). 시험에 쓴다.
+- PC 전체 전원 설정과 레지스트리는 바꾸지 않는다. 프로세스가 끝나면 효과도 사라진다.
+- 검증: 단위 테스트(설정과 명령줄 해석). 실제 측정은 W2 조건(다른 창 뒤)에서 옵션 꺼짐(약 50fps 재현)과 켜짐(≥ 58fps)을 비교한다. 잠금 해제가 필요하면 `OpenInputDesktop`으로 확인하고, 잠겨 있으면 측정은 ENV_BLOCKED로 남기고 사용자 시간에 맞춘다.
+- README에 증상, 원인, 옵션 사용법, 대가(전력 소모가 조금 늘 수 있음), 대안(오프스크린 실행, 창 포그라운드 유지)을 적는다.
+- 공용 C++ 변경이므로 CCTV-01L 최종 테스트 전에 끝낸다. 01L의 측정이 최종 회귀를 겸한다.
+
 ## 산출물
 
 - 의미 단위 커밋(`CCTV-01W`). 이 지시서도 커밋한다. push, PR, merge는 금지다.

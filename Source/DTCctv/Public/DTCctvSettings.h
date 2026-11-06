@@ -37,4 +37,8 @@ public:
 	/** DTCore 패키지 로그를 UE 로그에도 남긴다. 새 스트림부터 적용한다. */
 	UPROPERTY(config, EditAnywhere, Category = "DTCctv|Logging")
 	bool bMirrorPackagedLogsToUE = true;
+
+	/** Windows 11에서 창이 뒤에 있어도 이 프로세스의 타이머 해상도 요청을 존중한다. */
+	UPROPERTY(config, EditAnywhere, Category = "DTCctv|Windows", meta = (DisplayName = "백그라운드 타이머 제한 무시", ToolTip = "Windows 11에서 창이 가려지거나 포커스를 잃어도 타이머 해상도 요청을 유지합니다. 프로세스 전체에 적용되며 전력 소모가 늘 수 있습니다. 기본값은 꺼짐이며 재시작 후 적용됩니다. Windows 10과 Linux에서는 적용하지 않습니다."))
+	bool bIgnoreWindowsTimerThrottling = false;
 };
