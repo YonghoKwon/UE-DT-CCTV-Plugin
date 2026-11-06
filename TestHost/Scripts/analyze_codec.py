@@ -57,7 +57,7 @@ def analyze(folder, log, gpu_log, cpu_log, expected_hw=4):
     for key in ('dropped','errors','reconnects'):
         if max(int(r[key]) for r in aggregate):
             failures.append(key+' 0 기준 미달(시작 구간도 보존)')
-    limit = fps*.97
+    limit = fps*97/100
     if decoded/(16*duration) < limit or any(r['decode_fps'] < limit for r in channels):
         failures.append('전체·채널별 디코딩 원본97% 기준 미달')
     age_limit = 70 if fps == 30 else 50
