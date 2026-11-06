@@ -6,7 +6,7 @@ CCTV-01F의 최종 C++는 `95cd411`입니다. Editor·전체 단위 15개·새 W
 
 ## 코덱별 검증(CCTV-01G)
 
-H264 High B2·GOP12초, H265 Main 30/60fps·GOP12초·Main10·4K 및메인/서브혼합을 Windows·RHEL8로측정했습니다. 정상SW형식폴백에서불필요한재접속을없앤최종C++는9c98d85입니다. MJPEG4:2:2는재접속문제를고쳤지만Windows p9573ms와Linux16채널FPS미달및실제CUDA초기화불가가남아전체코덱판정은FAIL입니다.
+H264 High B2·GOP 12초, H265 Main 30/60fps·GOP 12초·Main10·4K 및 메인/서브 혼합을 Windows·RHEL 8에서 측정했습니다. 정상 SW 형식 폴백의 불필요한 재접속을 없앤 최종 C++는 `9c98d85`입니다. MJPEG 4:2:2는 재접속 문제를 고쳤지만 Windows p95 73ms, Linux 16채널 FPS 미달과 실제 CUDA 초기화 불가가 남아 전체 코덱 판정은 **FAIL**입니다.
 
 | 조건 | Windows decode/display·p95 | Linux SW16 | Linux 최대HW4 |
 |---|---|---|---|
@@ -20,7 +20,7 @@ H264 High B2·GOP12초, H265 Main 30/60fps·GOP12초·Main10·4K 및메인/서�
 | C8 MJPEG 1080p30 4:2:2 | FAIL 29.724/29.793, p95 73ms | FAIL 27.756 / 최저 22.136 | FAIL 27.119 / software16 |
 | C9 H265 4K 메인/H264 640 서브 | PASS 30.032/30.028, p95 43ms | PASS 30.060 / 최저 29.997 | PASS 30.011 / cuda4,software12 |
 
-GOP2초·주1080p30 H264/H265와작은뷰H264640서브를본측정기준의시작설정으로권장합니다. 기본HW4는H265에서도유지했으며 `프로젝트설정 → Plugins → DT CCTV → MaxHardwareDecodeStreams`로조정합니다. 긴GOP첫화면대기·스레드설정·코드버전·HW미지원과운영점검명령은[코덱검증상세](docs/CODEC_VALIDATION.md)를참조하십시오. Linux렌더링·실카메라·실제동시인코딩부하는검증범위밖입니다. 입력규격을낮춘별도조건으로기존FAIL을바꾸지않았습니다.
+GOP 2초·1080p30 H264/H265와 작은 뷰의 H264 640 서브를 본 측정 기준의 시작 설정으로 권장합니다. 기본 HW4는 H265에서도 유지했으며 `프로젝트 설정 → Game → DT CCTV → MaxHardwareDecodeStreams`로 조정합니다. 긴 GOP의 첫 화면 대기·스레드 설정·코드 버전·HW 미지원과 운영 점검 명령은 [코덱 검증 상세](docs/CODEC_VALIDATION.md)를 참조하십시오. Linux 렌더링·실제 카메라·실제 동시 인코딩 부하는 미검증입니다. 입력 규격을 낮춘 별도 조건으로 기존 FAIL을 바꾸지 않았습니다.
 
 ## 프로젝트에 적용
 
