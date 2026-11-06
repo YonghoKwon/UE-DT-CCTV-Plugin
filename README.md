@@ -121,6 +121,37 @@ Windows는 FFmpeg DLL 5개, Linux는 SONAME 파일 5개를 실행 바이너리 �
 
 ## Linux 드라이버와 서버 점검
 
+### 네트워크 장애 시험 (CCTV-01K)
+
+CCTV-01K는 **ENV_BLOCKED**입니다. 기존 RHEL8 실행 이미지와 중계 후보를 포함한 로컬 이미지36개에서 독립 `tc`와 사용 가능한 BusyBox `tc`가 모두 없었습니다. 새 이미지 다운로드·기존 이미지 변경·호스트 네트워크 변경은 하지 않았습니다. H.264/H.265 1080p30·16채널 × TCP/UDP × N1~N7의 **28개 실측은 모두 미수행**이며 FPS·손실·회복·메모리/스레드 복귀 수치는 없습니다. C++와 플러그인 기본 설정도 변경하지 않았습니다.
+
+아래 도구는 조건표와 기존 로컬 이미지의 준비 상태를 기록합니다. `--probe`는 자체 검사 컨테이너만 만들고 ID로 정리하며, 패키지를 실행하지 않습니다. 검사 대상에 `tc`가 준비됐더라도 결과 `READY`는 UE 재생 합격을 뜻하지 않습니다.
+
+```powershell
+python TestHost/Scripts/network_fault_test.py --out Saved/Reports/CCTV-01K/next-plan
+python TestHost/Scripts/network_fault_test.py --out Saved/Reports/CCTV-01K/next-probe --probe
+```
+
+`netem_control.sh`는 자체 시험 컨테이너 안에서 수신 인터페이스를 IFB로 보내 N1~N7을 적용·해제하는 제어 스크립트입니다. 같은 작업에서 새로 만든 Linux 플레이어의 네트워크 네임스페이스를 도구 컨테이너가 공유하는 구성에 사용합니다. 송신 ACK만 제한한 결과를 UDP 영상 손실 시험으로 간주하지 않습니다. 수신 방향을 IFB로 넘기는 방식은 [tc-mirred 매뉴얼](https://man7.org/linux/man-pages/man8/tc-mirred.8.html)의 수신 트래픽 처리 방식을 따릅니다.
+
+준비된 도구 컨테이너에서의 호출 형식은 다음과 같습니다. `$netemCid`는 이 시험에서 직접 생성하고 기록한 컨테이너 ID여야 합니다. 컨테이너는 `NET_ADMIN`, `tc`, `ip`, 커널 netem/IFB 지원, 쓰기 가능한 `/tmp`, `DTCCTV_NETEM_OWNED=1`, `/control/netem_control.sh`의 읽기 전용 마운트가 필요합니다. 호스트 네트워크를 공유하는 컨테이너에는 사용하지 않습니다.
+
+```powershell
+docker exec $netemCid /bin/sh /control/netem_control.sh init
+docker exec $netemCid /bin/sh /control/netem_control.sh apply N1
+docker exec $netemCid /bin/sh /control/netem_control.sh status
+docker exec $netemCid /bin/sh /control/netem_control.sh clear
+docker exec $netemCid /bin/sh /control/netem_control.sh cleanup
+```
+
+N2는150ms/지터30ms, N3는손실0.5%, N4는손실2%, N7은50ms/지터10ms/손실0.5%입니다. N5는 `apply N5 <실측한 전체 스트림 bps>`로80%를 계산합니다. 이80%는 포화 시험 조건이며 권장 회선 사용률이 아닙니다. N6는100% 손실을10초 적용한 뒤 복구합니다. `clear`는 장애 큐를 비우므로 남은 패킷은 버려지며 이 경계도 기록해야 합니다. 각 조건은120초 이상 실행하고 초기10초를 제외하며, 전후 정상 구간에서 같은 프로세스의 메모리·스레드 복귀를 비교합니다. 65,536패킷 큐 한계와 실제 backlog/drop 카운터를 기록해 의도하지 않은 큐 포화를 구분해야 합니다. 지터·손실의 정확한 난수열 재현은 현재 스크립트가 보장하지 않습니다. 옵션 의미와 타이머/큐 제약은 [tc-netem 매뉴얼](https://man7.org/linux/man-pages/man8/tc-netem.8.html)을 참조하십시오.
+
+현재 환경에서는 실제 `init/apply/clear`와 UE120초 연동을 검증하지 못했습니다. 재개할 때는 정상 TCP/UDP 경로와 실제 qdisc 카운터를 먼저 확인하고, N1/N2/N7의29.1fps·재연결0, N3의 유지·재연결0과 TCP 재전송/UDP 깨짐·회복, N4/N5의 무크래시·무정지·반복 없는 복구, N6의 마지막 화면 유지·복구5초를 원래 기준으로 평가해야 합니다. Linux NullRHI만 가능하면 화면·마지막 프레임 유지·표시는 미검증으로 구분합니다. 디코딩 오류 카운터를 UDP의 모든 깨진 프레임 수로 대신하지 않습니다.
+
+현재 frame age는 **디코더 반환~렌더 명령 등록**이며 네트워크 지연이 포함되지 않습니다. 여기에서50/150ms를 빼 음수 지연을 만들면 안 됩니다. 네트워크 포함 지연과 TCP 재전송/UDP 깨짐은 별도 계측이 필요합니다. 플레이어120초 실행·CSV 판정과 전후 복귀의 통합 실측은 `Saved/Reports/CCTV-01K/`에서 미수행으로 기록했습니다.
+
+현장에서는 기존 TCP 기본값을 우선 유지하고 망별 실측 후 UDP와 비교합니다. TCP는 손실 재전송과 순서 보장을 제공하지만, 이것이 CCTV-01K의 성능·회복 합격을 보증하지는 않습니다. [TCP 표준 RFC9293](https://www.rfc-editor.org/rfc/rfc9293.html) 메커니즘과 이번 미측정 상태를 구분하십시오. 대역폭은 실제 전체 스트림의 피크와 전송 오버헤드를 측정해 여유를 정하고, 작은 뷰에는 기존 서브 스트림을 활용하되 장애망에서의 효과는 별도 검증합니다. 읽기 시간 초과5초·재연결·패킷 큐 기본값은 이번 단계에서 바꾸지 않았습니다.
+
 NVDEC에는 `libcuda.so.1`뿐 아니라 `libnvcuvid.so.1`이 필요합니다. 컨테이너의 기본 compute/utility capability만으로 video 라이브러리가 노출되지 않을 수 있습니다. 이 PC에서는 `--gpus all -e NVIDIA_DRIVER_CAPABILITIES=all`로 CUDA4/SW12 디코딩을 확인했습니다. `libnvidia-encode.so.1`은 실제 NVENC 인코딩을 사용할 때도 확인해야 합니다.
 
 Vulkan 렌더링에는 사용할 GPU와 호환되는 ICD와 그 종속 라이브러리, UE 기능 수준을 만족하는 드라이버가 필요합니다. `LD_LIBRARY_PATH`, `VK_ICD_FILENAMES`/`VK_DRIVER_FILES`, `/usr/share/vulkan/icd.d`, `ldd`와 `vulkaninfo --summary`를 확인하십시오. WSL2의 CUDA/video 노출이 Vulkan 지원을 보증하지 않습니다. 현재 로컬 이미지의 기본 dzn, lavapipe 명시·SM5·CPU 장치 허용과 엔진 제공 `-SkipVulkanProfileCheck` 시험에서도 호환 ICD 초기화에 실패했습니다. 이 옵션은 진단용으로만 썼으며 운영 합격이나 드라이버 지원을 대신하지 않습니다.
