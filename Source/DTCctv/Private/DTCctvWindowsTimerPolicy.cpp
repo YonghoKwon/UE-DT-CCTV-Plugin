@@ -11,6 +11,32 @@
 namespace
 {
 	constexpr uint32 TimerResolutionBit = 0x4;
+
+#if PLATFORM_WINDOWS
+	bool QueryPower(PROCESS_POWER_THROTTLING_STATE& State)
+	{
+		using FQuery = BOOL (WINAPI*)(HANDLE, PROCESS_INFORMATION_CLASS, LPVOID, DWORD);
+		static const FQuery Query = reinterpret_cast<FQuery>(::GetProcAddress(::GetModuleHandleW(L"kernel32.dll"), "GetProcessInformation"));
+		if (Query == nullptr)
+		{
+			::SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+			return false;
+		}
+		return Query(::GetCurrentProcess(), ProcessPowerThrottling, &State, sizeof(State)) != 0;
+	}
+
+	bool WritePower(PROCESS_POWER_THROTTLING_STATE& State)
+	{
+		using FWrite = BOOL (WINAPI*)(HANDLE, PROCESS_INFORMATION_CLASS, LPVOID, DWORD);
+		static const FWrite Write = reinterpret_cast<FWrite>(::GetProcAddress(::GetModuleHandleW(L"kernel32.dll"), "SetProcessInformation"));
+		if (Write == nullptr)
+		{
+			::SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+			return false;
+		}
+		return Write(::GetCurrentProcess(), ProcessPowerThrottling, &State, sizeof(State)) != 0;
+	}
+#endif
 }
 
 FDTCctvTimerThrottlingOption DTCctvResolveTimerThrottling(bool bConfigured, const TCHAR* CommandLine)
@@ -59,7 +85,7 @@ FString FDTCctvWindowsTimerPolicy::Initialize(bool bConfigured, const TCHAR* Com
 	}
 	PROCESS_POWER_THROTTLING_STATE State = {};
 	State.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
-	if (!::GetProcessInformation(::GetCurrentProcess(), ProcessPowerThrottling, &State, sizeof(State)))
+	if (!QueryPower(State))
 	{
 		bWarning = true;
 		return Summary + FString::Printf(TEXT(" result=query_failed error=%lu"), ::GetLastError());
@@ -71,7 +97,7 @@ FString FDTCctvWindowsTimerPolicy::Initialize(bool bConfigured, const TCHAR* Com
 	DTCctvTimerPowerMasks(ControlMask, StateMask);
 	State.ControlMask = ControlMask;
 	State.StateMask = StateMask;
-	if (!::SetProcessInformation(::GetCurrentProcess(), ProcessPowerThrottling, &State, sizeof(State)))
+	if (!WritePower(State))
 	{
 		bWarning = true;
 		return Summary + FString::Printf(TEXT(" result=apply_failed error=%lu"), ::GetLastError());
@@ -93,14 +119,14 @@ void FDTCctvWindowsTimerPolicy::Shutdown()
 	}
 	PROCESS_POWER_THROTTLING_STATE State = {};
 	State.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
-	if (::GetProcessInformation(::GetCurrentProcess(), ProcessPowerThrottling, &State, sizeof(State)))
+	if (QueryPower(State))
 	{
 		// 외부에서 타이머 정책을 바꿨으면 덮어쓰지 않는다. 다른 정책은 현재 값을 보존한다.
 		if ((State.ControlMask & TimerResolutionBit) != 0 && (State.StateMask & TimerResolutionBit) == 0)
 		{
 			State.ControlMask = (State.ControlMask & ~TimerResolutionBit) | (OriginalControlMask & TimerResolutionBit);
 			State.StateMask = (State.StateMask & ~TimerResolutionBit) | (OriginalStateMask & TimerResolutionBit);
-			if (!::SetProcessInformation(::GetCurrentProcess(), ProcessPowerThrottling, &State, sizeof(State)))
+			if (!WritePower(State))
 			{
 				UE_LOG(LogDTCctv, Warning, TEXT("WindowsTimerThrottling result=restore_failed error=%lu"), ::GetLastError());
 			}

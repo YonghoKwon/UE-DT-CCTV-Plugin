@@ -1,4 +1,5 @@
-﻿param([ValidateSet('W1','W2','W3','W4','W5')][string]$Condition,[string]$Tag,[string]$ReportRoot='', [int]$PowerBits=5)
+param([ValidateSet('W1','W2','W3','W4','W5')][string]$Condition,[string]$Tag,[string]$ReportRoot='', [int]$PowerBits=5,
+    [string]$PackageExe='', [ValidateSet(-1,0,1)][int]$IgnoreTimerThrottling=-1)
 $ErrorActionPreference='Stop'
 $OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new()
 $repo=(Resolve-Path "$PSScriptRoot\..\..").Path
@@ -22,25 +23,38 @@ while($true)
 }
 New-Item -ItemType Directory -Force -Path $case|Out-Null
 $desktop=& "$PSScriptRoot\check_input_desktop.ps1" -Out "$case\input-desktop.json"|ConvertFrom-Json
-if($desktop.status -ne 'PASS'){throw 'ENV_BLOCKED: 입력 데스크톱이 Default가 아닙니다.'}
+if($desktop.status -ne 'PASS')
+{
+    Write-DTCctvJson "$case\execution.json" @{status='ENV_BLOCKED';tag=$Tag;condition=$Condition;note='입력 데스크톱이 Default가 아니거나 조회할 수 없음';input_desktop=$desktop}
+    "$(Get-Date -Format o) | $Tag | ENV_BLOCKED | OpenInputDesktop 잠금 해제 확인 실패"|Add-Content -Encoding UTF8 "$ReportRoot\progress.md"
+    return
+}
 $lock=Enter-DTCctvTestLock
 $owned=[System.Collections.Generic.List[object]]::new()
 $monitor=$null
-$result=[ordered]@{status='FAIL';condition=$Condition;tag=$Tag;started_at=(Get-Date -Format o);source_cpp=(& git log -1 --format=%H -- Source TestHost/Source).Trim();note='';requested_observation_seconds=90;game_seconds=105;warmup_seconds=10;game_fps_limit=60;source_fps=60;channels=16;ui_automation_calls=0;power_bits=$PowerBits}
+$result=[ordered]@{status='FAIL';condition=$Condition;tag=$Tag;started_at=(Get-Date -Format o);source_cpp=(& git log -1 --format=%H -- Source TestHost/Source).Trim();note='';requested_observation_seconds=90;game_seconds=105;warmup_seconds=10;game_fps_limit=60;source_fps=60;channels=16;ui_automation_calls=0;power_bits=$PowerBits;ignore_timer_throttling=$IgnoreTimerThrottling}
 try
 {
     $c=Get-Content -Raw -Encoding UTF8 "$ReportRoot\checkpoint.json"|ConvertFrom-Json
-    $source=Start-DTCctvSource -Tools $c.tools.mediamtx -FFmpeg $c.tools.ffmpeg -Out $case -Tag source -Fps 60 -Owned $owned
+    $serverConfig=Join-Path $case 'mediamtx-test.yml'
+    [IO.File]::WriteAllText($serverConfig,"logLevel: info`nlogDestinations: [stdout]`nrtsp: yes`nrtspTransports: [tcp, udp]`nrtspAddress: :8554`nrtmp: no`nhls: no`nwebrtc: no`nsrt: no`npaths:`n  all_others:`n",[Text.UTF8Encoding]::new($false))
+    $source=Start-DTCctvSource -Tools $c.tools.mediamtx -FFmpeg $c.tools.ffmpeg -Out $case -Tag source -Fps 60 -Owned $owned -ServerConfig $serverConfig
     $powershell=(Get-Command powershell.exe).Source
     $monitorArgs='-NoProfile -STA -ExecutionPolicy Bypass -File "'+$PSScriptRoot+'\collect_window_state.ps1" -Case "'+$case+'" -Condition '+$Condition+' -PowerBits '+$PowerBits
     $process=Start-Process -FilePath $powershell -ArgumentList $monitorArgs -WindowStyle Hidden -WorkingDirectory $repo -RedirectStandardOutput "$case\monitor.stdout.log" -RedirectStandardError "$case\monitor.stderr.log" -PassThru
     $null=$process.Handle
     $monitor=[pscustomobject]@{Process=$process;Id=$process.Id;Path=$powershell;Started=$process.StartTime.ToUniversalTime()};$owned.Add($monitor)
     Write-DTCctvJson "$case\monitor.process.json" @{pid=$monitor.Id;path=$monitor.Path;started_utc=$monitor.Started.ToString('o')}
-    $exe='C:\Users\ho270\AppData\Local\Temp\cctv\pkg-J\Windows\DTCctvTestHost\Binaries\Win64\DTCctvTestHost.exe'
+    $exe=$PackageExe
+    if(-not $exe){$exe='C:\Users\ho270\AppData\Local\Temp\cctv\pkg-J\Windows\DTCctvTestHost\Binaries\Win64\DTCctvTestHost.exe'}
+    $result['package_exe']=$exe
+    $result['package_sha256']=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
     $arguments='-windowed -ForceRes -ResX=1920 -ResY=1080 -unattended -nosplash -nosound -CctvUrl=rtsp://127.0.0.1:8554/cam -CctvCount=16 -CctvSeconds=105 -CctvCsv="'+$case+'\samples.csv" -ExecCmds="r.VSync 0,t.MaxFPS 60" -abslog="'+$case+'\game.log"'
     if($Condition -eq 'W4'){$arguments+=' -RenderOffScreen'}
     if($Condition -ne 'W3'){$arguments+=' -CctvShot="'+$case+'\final.png"'}
+    if($IgnoreTimerThrottling -ge 0){$arguments+=' -DTCctvIgnoreTimerThrottling='+$IgnoreTimerThrottling}
+    $desktop=& "$PSScriptRoot\check_input_desktop.ps1" -Out "$case\input-desktop-before-launch.json"|ConvertFrom-Json
+    if($desktop.status -ne 'PASS'){$result.status='ENV_BLOCKED';throw 'ENV_BLOCKED: 실행 직전 입력 데스크톱 확인 실패'}
     $game=Start-DTCctvOwnedProcess -File $exe -Arguments $arguments -WorkingDirectory (Split-Path $exe) -LogPrefix "$case\game" -Owned $owned
     $result['pid']=$game.Id
     $c|Add-Member -MemberType NoteProperty -Name active_measurement -Value @{tag=$Tag;condition=$Condition;pid=$game.Id;started_at=$result.started_at} -Force

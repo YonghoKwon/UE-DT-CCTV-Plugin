@@ -223,7 +223,8 @@ function Start-DTCctvSource
 {
 	param([string]$Tools, [string]$FFmpeg, [string]$Out, [string]$Tag,
 		[int]$Fps = 60, [string]$Path = 'cam', [int]$Width = 1920, [int]$Height = 1080,
-		[System.Collections.Generic.List[object]]$Owned, [switch]$PublisherOnly, [string]$ServerLogPrefix)
+		[System.Collections.Generic.List[object]]$Owned, [switch]$PublisherOnly, [string]$ServerLogPrefix,
+		[string]$ServerConfig = 'mediamtx.yml')
 	$server = $null
 	if (-not $PublisherOnly)
 	{
@@ -235,7 +236,7 @@ function Start-DTCctvSource
 		{
 			[System.Environment]::SetEnvironmentVariable('MTX_LOGLEVEL', 'info', 'Process')
 			[System.Environment]::SetEnvironmentVariable('MTX_LOGDESTINATIONS', 'stdout', 'Process')
-			$server = Start-DTCctvOwnedProcess -File (Join-Path $Tools 'mediamtx.exe') -Arguments 'mediamtx.yml' `
+			$server = Start-DTCctvOwnedProcess -File (Join-Path $Tools 'mediamtx.exe') -Arguments ('"' + $ServerConfig + '"') `
 				-WorkingDirectory $Tools -LogPrefix $ServerLogPrefix -Owned $Owned
 		}
 		finally
