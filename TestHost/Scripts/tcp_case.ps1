@@ -1,5 +1,5 @@
-﻿param([ValidateSet('plugin','copy','decode')][string]$Mode,[ValidateSet(1,4,8,16)][int]$Count,[string]$Tag,
-    [ValidateSet('N0','N1','N2','N3','N4','N7')][string]$Condition='N1',[string]$Option='', [int]$BufferBytes=0)
+﻿param([ValidateSet('plugin','plugin-auto','copy','decode')][string]$Mode,[ValidateSet(1,4,8,16)][int]$Count,[string]$Tag,
+    [ValidateSet('N0','N1','N2','N3','N4','N7')][string]$Condition='N1',[ValidateSet('','buffer_size','recv_buffer_size')][string]$Option='', [ValidateRange(0,16777216)][int]$BufferBytes=0)
 $ErrorActionPreference='Stop'
 $OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new()
 $env:PYTHONIOENCODING='utf-8'
@@ -34,6 +34,13 @@ function NetControl([string]$Action,[string]$Scenario='')
 }
 try
 {
+    $hashes=@{};foreach($name in @('tcp_case.ps1','tcp_runtime.py','tcp_receiver.py','netem_control.sh','netem_runtime.js')){$hashes[$name]=(Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $name) -Algorithm SHA256).Hash};Write-DTCctvJson "$case\script-hashes.json" $hashes
+    $sourceHash=(Get-FileHash -LiteralPath $cfg.sources.h264.file -Algorithm SHA256).Hash.ToLowerInvariant()
+    if($sourceHash -ne $cfg.sources.h264.sha256){throw 'C1 입력 파일 해시 불일치'}
+    $result['source_sha256']=$sourceHash
+    $cpp=(& git log -1 --format=%H -- Source TestHost/Source).Trim()
+    if(-not $cpp.StartsWith($cfg.source_cpp)){throw '패키징 뒤 C++가 바뀌었습니다.'}
+    $result['source_cpp']=$cpp
     $cp=Get-Content -Raw -Encoding UTF8 "$report\checkpoint.json"|ConvertFrom-Json
     $cp.active_measurement=@{tag=$Tag;started_at=$result.started_at};Write-DTCctvJson "$report\checkpoint.json" $cp
     & python -c "import sys;sys.path.insert(0,'TestHost/Scripts');from network_fault_test import validate_rpm_cache;from pathlib import Path;validate_rpm_cache(Path(sys.argv[1]))" $cfg.rpm_dir
@@ -73,6 +80,11 @@ try
         '--mount',"type=bind,source=$case\saved,target=/package/DTCctvTestHost/Saved",'--mount',"type=bind,source=$PSScriptRoot,target=/check,readonly",
         '--env','LD_LIBRARY_PATH=/package/DTCctvTestHost/Binaries/Linux','--entrypoint','/usr/libexec/platform-python',$cfg.image,
         '/check/tcp_runtime.py',$Mode,'--count',[string]$Count,'--seconds','160')
+    if($Mode -eq 'plugin-auto')
+    {
+        $imageIndex=[Array]::IndexOf($create,[string]$cfg.image)
+        $create=@($create[0..($imageIndex-1)])+@('--gpus','all','--env','NVIDIA_DRIVER_CAPABILITIES=all')+@($create[$imageIndex..($create.Length-1)])
+    }
     if($Option){$create+=@('--option',$Option,'--buffer',[string]$BufferBytes)}
     $playerId=[string](& docker @create 2> "$case\player-create.log")
     if($LASTEXITCODE -ne 0 -or $playerId -notmatch '^[0-9a-f]{64}$'){throw '자체 수신기 컨테이너 생성 실패'}
@@ -92,7 +104,11 @@ try
     }
     Assert-DTCctvMeasurementIdle -Owned $owned -Force
     $result['native_exit_code']=$runner.Process.ExitCode
-    if($runner.Process.ExitCode -ne 0){throw '수신기 비정상 종료. 원시 로그 확인 필요'}
+    if($runner.Process.ExitCode -ne 0)
+    {
+        if(-not(Test-Path -LiteralPath "$case\runtime-result.json")){throw '수신기 실행 도구 비정상 종료. 원시 로그 확인 필요'}
+        $result.note='대조 수신기 오류 종료 포함. 종료 코드와 프레임 수를 보존하고 분석에서 FAIL로 판정'
+    }
     $result.status='MEASURED'
 }
 catch
@@ -115,7 +131,8 @@ finally
     try{Close-DTCctvOwnedProcesses $owned}catch{$result.status='FAIL';$result.note+=$_.Exception.Message}
     $result['finished_at']=Get-Date -Format o
     Write-DTCctvJson "$case\execution.json" $result
-    & python "$report\gate.py" $Tag $result.status $result.note
+    $gateNote=if($result.note){$result.note}else{'원시160초 측정 완료. 판정은 analysis.json에 별도로 기록'}
+    & python "$report\gate.py" $Tag $result.status $gateNote
     $lock.ReleaseMutex();$lock.Dispose()
 }
 $result|ConvertTo-Json -Depth 6

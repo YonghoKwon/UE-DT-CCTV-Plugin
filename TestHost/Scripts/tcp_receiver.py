@@ -51,11 +51,12 @@ def main():
         check(info(fmt,None));index=best(fmt,0,-1,-1,c.byref(dec),0);check(index)
         if args.mode=='decode':
             codec=ptr(ctxalloc(dec));check(params(codec,c.cast(fmt,c.POINTER(Format)).contents.streams[index].contents.codecpar))
-            opts=ptr();setdict(c.byref(opts),b'threads',b'2',0);setdict(c.byref(opts),b'flags',b'low_delay',0)
+            # C1은B프레임이 있으므로 플러그인처럼 디코더 LOW_DELAY를 강제로 켜지 않는다.
+            opts=ptr();setdict(c.byref(opts),b'threads',b'2',0);setdict(c.byref(opts),b'thread_type',b'frame+slice',0)
             check(codecopen(codec,dec,c.byref(opts)));freedict(c.byref(opts));frame=ptr(frame_alloc())
         pkt=ptr(packet_alloc());began=time.monotonic();next_sample=began;packets=frames=errors=0;wait=waitmax=0
         supported={name:bool(findopt(fmt,name.encode(),None,0,1)) for name in ('recv_buffer_size','buffer_size')}
-        (args.out.with_suffix('.meta.json')).write_text(json.dumps(dict(pid=os.getpid(),mode=args.mode,version=version,options=config,unconsumed_options=leftover,rtsp_option_visible=supported,scope='복사는 비디오 패킷을 수신 후 해제, 디코딩은 SW2스레드·표시/색 변환 없음',started_epoch=time.time()),ensure_ascii=False,indent=2),encoding='utf-8')
+        (args.out.with_suffix('.meta.json')).write_text(json.dumps(dict(pid=os.getpid(),mode=args.mode,version=version,options=config,unconsumed_options=leftover,rtsp_option_visible=supported,decoder_options={'threads':2,'thread_type':'frame+slice','low_delay':False} if args.mode=='decode' else None,scope='C1 B2 전용. 복사는 비디오 패킷을 수신 후 해제, 디코딩은 SW2스레드·표시/색 변환 없음',started_epoch=time.time()),ensure_ascii=False,indent=2),encoding='utf-8')
         with args.out.open('w',encoding='utf-8',buffering=1) as out:
             while time.monotonic()-began<args.seconds:
                 before=time.monotonic();ret=read(fmt,pkt);end=time.monotonic();wait+=end-before;waitmax=max(waitmax,end-before)
