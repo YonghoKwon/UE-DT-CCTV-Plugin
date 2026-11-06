@@ -8,7 +8,6 @@
 	],
 	"Plugins": [
 		{ "Name": "DTCctv", "Enabled": true },
-		{ "Name": "FFMPEGMedia", "Enabled": true, "Optional": true },
 		{ "Name": "PixelStreaming", "Enabled": true },
 		{ "Name": "AndroidFileServer", "Enabled": false }
 	]
