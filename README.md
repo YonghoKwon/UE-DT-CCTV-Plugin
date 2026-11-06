@@ -133,13 +133,16 @@ Pixel Streaming을 활성화한 Windows·Linux 단독 빌드의 마운트와 16�
 
 ### 네트워크 장애 시험 (CCTV-01K)
 
-CCTV-01K는 **ENV_BLOCKED**입니다. 기존 RHEL8 실행 이미지와 중계 후보를 포함한 로컬 이미지36개에서 독립 `tc`와 사용 가능한 BusyBox `tc`가 모두 없었습니다. 새 이미지 다운로드·기존 이미지 변경·호스트 네트워크 변경은 하지 않았습니다. H.264/H.265 1080p30·16채널 × TCP/UDP × N1~N7의 **28개 실측은 모두 미수행**이며 FPS·손실·회복·메모리/스레드 복귀 수치는 없습니다. C++와 플러그인 기본 설정도 변경하지 않았습니다.
+CCTV-01K **1차 실행은 ENV_BLOCKED**였습니다. 기존 RHEL8 실행 이미지와 중계 후보를 포함한 로컬 이미지36개에 `tc`가 없어 28개 실측을 수행하지 못했습니다. 원문은 `Saved/Reports/CCTV-01K/first-run-preserved/`에 보존했습니다.
+
+사용자가 공식 Rocky8 `iproute-tc`와 최소 의존 RPM 다운로드를 승인하여 재실행 중입니다. 다운로드9개 합계2,707,640바이트(기존 설치를 확인하기 전에 받은 미사용 libnl3 1개 포함), 설치는 필요한8개로 한정했습니다. URL·크기·SHA256과 공식 공개키 지문·RPM 서명 확인을 기록했습니다. RPM은 읽기 전용 마운트하고 새 시험 컨테이너의 쓰기 계층에만 설치합니다. 기존 이미지·호스트/WSL 네트워크 설정은 변경하지 않습니다. 현재 커널에서 netem·IFB·수신 제어 경로를 확인했으며, Linux28개와 Windows TCP 중계14개를 직렬 측정합니다. 현재 판정은 `Saved/Reports/CCTV-01K/progress.md`와 checkpoint를 참조하십시오. C++와 기본값은 변경하지 않았습니다.
 
 아래 도구는 조건표와 기존 로컬 이미지의 준비 상태를 기록합니다. `--probe`는 자체 검사 컨테이너만 만들고 ID로 정리하며, 패키지를 실행하지 않습니다. 검사 대상에 `tc`가 준비됐더라도 결과 `READY`는 UE 재생 합격을 뜻하지 않습니다.
 
 ```powershell
 python TestHost/Scripts/network_fault_test.py --out Saved/Reports/CCTV-01K/next-plan
 python TestHost/Scripts/network_fault_test.py --out Saved/Reports/CCTV-01K/next-probe --probe
+python TestHost/Scripts/network_fault_test.py --out Saved/Reports/CCTV-01K/next-rpm-probe --probe --image ps-node24-rhel8-debug:20261027 --rpm-dir "$env:LOCALAPPDATA\Temp\cctv\dl\rpm-tc"
 ```
 
 `netem_control.sh`는 자체 시험 컨테이너 안에서 수신 인터페이스를 IFB로 보내 N1~N7을 적용·해제하는 제어 스크립트입니다. 같은 작업에서 새로 만든 Linux 플레이어의 네트워크 네임스페이스를 도구 컨테이너가 공유하는 구성에 사용합니다. 송신 ACK만 제한한 결과를 UDP 영상 손실 시험으로 간주하지 않습니다. 수신 방향을 IFB로 넘기는 방식은 [tc-mirred 매뉴얼](https://man7.org/linux/man-pages/man8/tc-mirred.8.html)의 수신 트래픽 처리 방식을 따릅니다.
@@ -156,9 +159,9 @@ docker exec $netemCid /bin/sh /control/netem_control.sh cleanup
 
 N2는150ms/지터30ms, N3는손실0.5%, N4는손실2%, N7은50ms/지터10ms/손실0.5%입니다. N5는 `apply N5 <실측한 전체 스트림 bps>`로80%를 계산합니다. 이80%는 포화 시험 조건이며 권장 회선 사용률이 아닙니다. N6는100% 손실을10초 적용한 뒤 복구합니다. `clear`는 장애 큐를 비우므로 남은 패킷은 버려지며 이 경계도 기록해야 합니다. 각 조건은120초 이상 실행하고 초기10초를 제외하며, 전후 정상 구간에서 같은 프로세스의 메모리·스레드 복귀를 비교합니다. 65,536패킷 큐 한계와 실제 backlog/drop 카운터를 기록해 의도하지 않은 큐 포화를 구분해야 합니다. 지터·손실의 정확한 난수열 재현은 현재 스크립트가 보장하지 않습니다. 옵션 의미와 타이머/큐 제약은 [tc-netem 매뉴얼](https://man7.org/linux/man-pages/man8/tc-netem.8.html)을 참조하십시오.
 
-현재 환경에서는 실제 `init/apply/clear`와 UE120초 연동을 검증하지 못했습니다. 재개할 때는 정상 TCP/UDP 경로와 실제 qdisc 카운터를 먼저 확인하고, N1/N2/N7의29.1fps·재연결0, N3의 유지·재연결0과 TCP 재전송/UDP 깨짐·회복, N4/N5의 무크래시·무정지·반복 없는 복구, N6의 마지막 화면 유지·복구5초를 원래 기준으로 평가해야 합니다. Linux NullRHI만 가능하면 화면·마지막 프레임 유지·표시는 미검증으로 구분합니다. 디코딩 오류 카운터를 UDP의 모든 깨진 프레임 수로 대신하지 않습니다.
+재실행은 `network_fault_case.ps1`로 실제 `init/apply/clear`와 패키지를 연결하고, `analyze_network_case.py`가 적용 초기10초를 제외한120초 이상을 판정합니다. 원래 기준인 N1/N2/N7의29.1fps·재연결0, N3의 유지·재연결0과 TCP 재전송/UDP 깨짐·회복, N4/N5의 무크래시·무정지·반복 없는 복구, N6의 마지막 화면 유지·복구5초를 유지합니다. Linux NullRHI의 화면·마지막 프레임 유지·표시는 미검증으로 구분하고, 디코딩 오류 카운터를 UDP의 모든 깨진 프레임 수로 대신하지 않습니다. Windows 중계는 Node의 TCP 바이트 중계이며 UDP 중계는 지원하지 않습니다.
 
-현재 frame age는 **디코더 반환~렌더 명령 등록**이며 네트워크 지연이 포함되지 않습니다. 여기에서50/150ms를 빼 음수 지연을 만들면 안 됩니다. 네트워크 포함 지연과 TCP 재전송/UDP 깨짐은 별도 계측이 필요합니다. 플레이어120초 실행·CSV 판정과 전후 복귀의 통합 실측은 `Saved/Reports/CCTV-01K/`에서 미수행으로 기록했습니다.
+현재 frame age는 **디코더 반환~렌더 명령 등록**이며 네트워크 지연이 포함되지 않습니다. 여기에서50/150ms를 빼 음수 지연을 만들면 안 됩니다. 네트워크 포함 지연과 정확한 UDP 손상 프레임 수는 현재 미측정이며, 해당 항목을 PASS로 올리지 않습니다. TCP 재전송·재정렬은 같은 네임스페이스의 nstat/ss와 qdisc 원문을 함께 남깁니다. 메모리 전후 비교에는 정상 초기화·캐시 증가도 포함될 수 있으므로 원시 증감과 실제 누적 결함의 해석을 구분합니다.
 
 현장에서는 기존 TCP 기본값을 우선 유지하고 망별 실측 후 UDP와 비교합니다. TCP는 손실 재전송과 순서 보장을 제공하지만, 이것이 CCTV-01K의 성능·회복 합격을 보증하지는 않습니다. [TCP 표준 RFC9293](https://www.rfc-editor.org/rfc/rfc9293.html) 메커니즘과 이번 미측정 상태를 구분하십시오. 대역폭은 실제 전체 스트림의 피크와 전송 오버헤드를 측정해 여유를 정하고, 작은 뷰에는 기존 서브 스트림을 활용하되 장애망에서의 효과는 별도 검증합니다. 읽기 시간 초과5초·재연결·패킷 큐 기본값은 이번 단계에서 바꾸지 않았습니다.
 

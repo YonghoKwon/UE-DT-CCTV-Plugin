@@ -33,7 +33,14 @@ case "$action" in
     ip link set "$ifb" up
     tc qdisc add dev "$interface" handle ffff: ingress
     trap 'tc qdisc del dev "$interface" ingress 2>/dev/null || true; ip link del "$ifb" 2>/dev/null || true' EXIT
-    tc filter add dev "$interface" parent ffff: protocol all u32 match u32 0 0 action mirred egress redirect dev "$ifb"
+    if [ -n "${DTCCTV_SOURCE_PORT:-}" ]; then
+      case "$DTCCTV_SOURCE_PORT" in *[!0-9]*|'') exit 2;; esac
+      [ "$DTCCTV_SOURCE_PORT" -gt 0 ] && [ "$DTCCTV_SOURCE_PORT" -le 65535 ] || exit 2
+      # Windows TCP 중계에서는 원본 RTSP 서버에서 들어오는 데이터에만 장애를 건다.
+      tc filter add dev "$interface" parent ffff: protocol ip u32 match ip protocol 6 0xff match ip sport "$DTCCTV_SOURCE_PORT" 0xffff action mirred egress redirect dev "$ifb"
+    else
+      tc filter add dev "$interface" parent ffff: protocol all u32 match u32 0 0 action mirred egress redirect dev "$ifb"
+    fi
     tc qdisc add dev "$ifb" root netem limit "$limit" delay 0ms
     printf '%s\n' "$interface" > "$state"
     trap - EXIT

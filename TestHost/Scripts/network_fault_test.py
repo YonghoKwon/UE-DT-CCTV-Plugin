@@ -3,6 +3,7 @@
 import argparse
 import datetime as dt
 import json
+import hashlib
 from pathlib import Path
 import re
 import subprocess
@@ -33,7 +34,25 @@ def docker(*args, timeout=40):
                           encoding="utf-8", errors="replace", timeout=timeout)
 
 
-def probe_image(image, out):
+def validate_rpm_cache(folder):
+    folder = folder.resolve()
+    manifest = json.loads((folder / "download-manifest.json").read_text(encoding="utf-8-sig"))
+    total = 0
+    for row in manifest["packages"]:
+        if not re.fullmatch(r"[A-Za-z0-9+_.-]+\.rpm", row["file"]):
+            raise ValueError("승인 RPM 파일 이름 오류")
+        if not row["url"].startswith("https://download.rockylinux.org/pub/rocky/8/BaseOS/x86_64/os/Packages/"):
+            raise ValueError("Rocky8 공식 저장소 RPM만 허용")
+        data = (folder / row["file"]).read_bytes()
+        total += len(data)
+        if len(data) != row["bytes"] or hashlib.sha256(data).hexdigest() != row["sha256"]:
+            raise ValueError("RPM 캐시 해시/크기 불일치")
+    if total > 50_000_000:
+        raise ValueError("RPM 합계50MB 한도 초과")
+    return folder
+
+
+def probe_image(image, out, rpm_dir=None):
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/@:-]*", image):
         raise ValueError("기존 이미지 이름/ID 형식이 올바르지 않습니다.")
     out.mkdir(parents=True, exist_ok=False)
@@ -43,12 +62,24 @@ def probe_image(image, out):
                  netem=False, ifb=False, cap_requested=["NET_ADMIN"], note="")
     try:
         script = Path(__file__).with_name("netem_probe.sh").resolve()
-        created = docker("create", "--pull", "never", "--network", "none", "--read-only",
-                         "--user", "0:0", "--cap-drop", "ALL", "--cap-add", "NET_ADMIN",
+        args = ["create", "--pull", "never", "--network", "none",
+                         "--user", "0:0", "--cap-add", "NET_ADMIN",
                          "--security-opt", "no-new-privileges", "--cidfile", str(cidfile),
                          "--label", "dtcctv.task=CCTV-01K",
                          "--mount", "type=bind,source={},target=/probe.sh,readonly".format(script),
-                         "--entrypoint", "/bin/sh", image, "/probe.sh")
+                         "--entrypoint", "/bin/sh"]
+        if rpm_dir:
+            # RPM 설치는 이 호출이 만드는 컨테이너의 쓰기 계층에만 수행한다.
+            rpm_dir = validate_rpm_cache(rpm_dir)
+            runtime = script.with_name("netem_runtime.js")
+            setup = script.with_name("netem_rpm_setup.sh")
+            args += ["--mount", f"type=bind,source={rpm_dir},target=/rpms,readonly",
+                     "--mount", f"type=bind,source={runtime},target=/runtime.js,readonly",
+                     "--mount", f"type=bind,source={setup},target=/setup.sh,readonly",
+                     image, "-c", "DTCCTV_NETEM_OWNED=1 /bin/sh /setup.sh && exec /bin/sh /probe.sh"]
+        else:
+            args += ["--read-only", "--cap-drop", "ALL", image, "/probe.sh"]
+        created = docker(*args)
         (out / "create.log").write_text(created.stderr, encoding="utf-8")
         if cidfile.is_file():
             cid = cidfile.read_text(encoding="ascii").strip()
@@ -91,6 +122,7 @@ def main():
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--probe", action="store_true", help="기존 로컬 이미지만 실제 검사")
     parser.add_argument("--image", action="append", help="검사할 기존 이미지; 생략하면 전체 로컬 이미지")
+    parser.add_argument("--rpm-dir", type=Path, help="사용자 승인 후 공식 RPM을 내려받은 캐시. 명령 자체는 다운로드하지 않음.")
     parser.add_argument("--seconds", type=int, default=120)
     parser.add_argument("--aggregate-bps", type=int, help="N5용 실측 전체 스트림 비트레이트")
     args = parser.parse_args()
@@ -108,7 +140,7 @@ def main():
                 raise RuntimeError("기존 Docker 이미지 목록 조회 실패")
             candidates = list(dict.fromkeys(inventory.stdout.split()))
         for index, image in enumerate(candidates):
-            value = probe_image(image, out / "images" / "{:02d}".format(index))
+            value = probe_image(image, out / "images" / "{:02d}".format(index), args.rpm_dir)
             images.append(value)
             with (out / "progress.md").open("a", encoding="utf-8") as stream:
                 stream.write("{} | 이미지{} | {} | {}\n".format(now(), index, value["status"], value["note"]))

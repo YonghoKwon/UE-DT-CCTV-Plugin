@@ -13,7 +13,7 @@ function Assert-DTCctvMeasurementIdle
 	if (-not $Force -and ($now - $script:DTCctvLastIdleCheck).TotalSeconds -lt 5) { return }
 	$script:DTCctvLastIdleCheck = $now
 	$ids = @($Owned | Where-Object { -not $_.Process.HasExited } | ForEach-Object { $_.Id })
-	try { Assert-DTCctvIdle -OwnedIds $ids }
+	try { Assert-DTCctvIdle -OwnedIds $ids -OwnedProcesses $Owned }
 	catch { throw [System.OperationCanceledException]::new('다른 작업이 겹쳐 측정 무효: ' + $_.Exception.Message) }
 }
 
@@ -41,13 +41,29 @@ function Enter-DTCctvTestLock
 	return $mutex
 }
 
+function Test-DTCctvOwnedCimProcess
+{
+	param($Candidate, $OwnedProcesses)
+	foreach ($entry in $OwnedProcesses)
+	{
+		if ($Candidate.ProcessId -ne $entry.Id -or $null -eq $entry.Started -or $null -eq $Candidate.CreationDate) { continue }
+		if ($Candidate.ExecutablePath -eq $entry.Path -and
+			[math]::Abs(($Candidate.CreationDate.ToUniversalTime() - $entry.Started).TotalMilliseconds) -le 1)
+		{
+			return $true
+		}
+	}
+	return $false
+}
+
 function Assert-DTCctvIdle
 {
-	param([int[]]$OwnedIds = @())
+	param([int[]]$OwnedIds = @(), $OwnedProcesses = @())
 	$busy = @(Get-CimInstance Win32_Process | Where-Object {
 		$_.ProcessId -ne $PID -and $_.ProcessId -notin $OwnedIds -and $_.Name -notmatch '^UnrealTraceServer(\.exe)?$' -and (
 			$_.Name -match '^(Unreal.*|ShaderCompileWorker|DTCctvTestHost|mediamtx|ffmpeg)(\.exe)?$' -or
-			$_.CommandLine -match '(UnrealBuildTool\.(dll|exe)|[\\/]Build\.bat|[\\/]RunUAT\.bat)')
+			$_.CommandLine -match '(UnrealBuildTool\.(dll|exe)|[\\/]Build\.bat|[\\/]RunUAT\.bat)') -and
+			-not (Test-DTCctvOwnedCimProcess -Candidate $_ -OwnedProcesses $OwnedProcesses)
 	})
 	if ($busy.Count -gt 0)
 	{
