@@ -201,7 +201,7 @@ bool UDTCctvCheckSubsystem::StartCheck(double Seconds)
 		Streams.Add(Stream);
 		Channel.CsvPath = ReportDirectory / FString::Printf(TEXT("channel-%02d.csv"), Channels.Num());
 		const FString Header = TEXT("t,state,decoded,displayed,decode_fps,display_fps,reconnects,dropped,errors,superseded,frame_age_"
-									"latest_ms,frame_age_p95_ms,last_error\n");
+									"latest_ms,frame_age_p95_ms,last_error,queued_packets,peak_queued_packets,read_calls,read_wait_seconds,read_wait_max_seconds,read_gap_max_seconds,packet_push_seconds,packet_push_max_seconds\n");
 		bWriteFailed |= !FFileHelper::SaveStringToFile(Header, *Channel.CsvPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
 	}
 	bRunning = true;
@@ -318,9 +318,11 @@ void UDTCctvCheckSubsystem::WriteSamples(double Elapsed)
 	{
 		const FDTCctvStreamStats& Stats = Channel.Observation.Current;
 		const FString Row = FString::Printf(
-			TEXT("%.3f,%d,%lld,%lld,%.3f,%.3f,%d,%lld,%lld,%lld,%.3f,%.3f,%s\n"), Elapsed, static_cast<int32>(Stats.State),
+			TEXT("%.3f,%d,%lld,%lld,%.3f,%.3f,%d,%lld,%lld,%lld,%.3f,%.3f,%s,%d,%d,%lld,%.6f,%.6f,%.6f,%.6f,%.6f\n"), Elapsed, static_cast<int32>(Stats.State),
 			Stats.FramesDecoded, Stats.FramesDisplayed, Stats.DecodeFps, Stats.DisplayFps, Stats.Reconnects, Stats.PacketsDropped,
-			Stats.DecodeErrors, Stats.FramesSuperseded, Stats.FrameAgeLatestMs, Stats.FrameAgeP95Ms, *CsvText(Channel.Observation.Error));
+			Stats.DecodeErrors, Stats.FramesSuperseded, Stats.FrameAgeLatestMs, Stats.FrameAgeP95Ms, *CsvText(Channel.Observation.Error),
+			Stats.QueuedPackets, Stats.PeakQueuedPackets, Stats.ReadCalls, Stats.ReadWaitSeconds, Stats.ReadWaitMaxSeconds,
+			Stats.ReadGapMaxSeconds, Stats.PacketPushSeconds, Stats.PacketPushMaxSeconds);
 		bWriteFailed |= !FFileHelper::SaveStringToFile(Row, *Channel.CsvPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM,
 													   &IFileManager::Get(), FILEWRITE_Append);
 	}

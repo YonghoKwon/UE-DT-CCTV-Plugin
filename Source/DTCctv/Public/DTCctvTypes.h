@@ -127,6 +127,14 @@ struct FDTCctvStreamStats
 	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
 	int32 PeakQueuedPackets = 0;
 
+	/** 읽기 호출 안의 누적 시간과 호출 사이 시간. 네트워크 대기와 읽기 스레드 정체를 구분한다. */
+	int64 ReadCalls = 0;
+	double ReadWaitSeconds = 0.0;
+	double ReadWaitMaxSeconds = 0.0;
+	double ReadGapMaxSeconds = 0.0;
+	double PacketPushSeconds = 0.0;
+	double PacketPushMaxSeconds = 0.0;
+
 	UPROPERTY(BlueprintReadOnly, Category = "DTCctv")
 	int64 PacketKeyWaits = 0;
 

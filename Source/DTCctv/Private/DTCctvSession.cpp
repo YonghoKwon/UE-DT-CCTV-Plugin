@@ -256,6 +256,12 @@ void FDTCctvSession::FillStats(FDTCctvStreamStats& Stats) const
 {
 	Stats.State = State.load();
 	Stats.PacketsReceived = PacketsReceived.load();
+	Stats.ReadCalls = ReadCalls.load();
+	Stats.ReadWaitSeconds = ReadWaitMicros.load() / 1000000.0;
+	Stats.ReadWaitMaxSeconds = ReadWaitMaxMicros.load() / 1000000.0;
+	Stats.ReadGapMaxSeconds = ReadGapMaxMicros.load() / 1000000.0;
+	Stats.PacketPushSeconds = PacketPushMicros.load() / 1000000.0;
+	Stats.PacketPushMaxSeconds = PacketPushMaxMicros.load() / 1000000.0;
 	Stats.FramesDecoded = FramesDecoded.load();
 	Stats.FramesSuperseded = FramesSuperseded.load();
 	Queue.FillStats(Stats);
@@ -776,6 +782,7 @@ void FDTCctvSession::ReadLoop()
 	double FirstKeyPacketSeconds = 0.0;
 	const int64 DroppedAtStart = Queue.GetDroppedPackets();
 	AVPacket* Packet = av_packet_alloc();
+	double LastReadCompleted = 0.0;
 
 	while (Packet != nullptr && !bStop.load())
 	{
@@ -799,7 +806,17 @@ void FDTCctvSession::ReadLoop()
 			break;
 		}
 		ExtendDeadline(Params.ReadTimeoutSeconds);
+		const double ReadStarted = NowSeconds();
+		if (LastReadCompleted > 0.0)
+		{
+			ReadGapMaxMicros.store(FMath::Max(ReadGapMaxMicros.load(), static_cast<int64>((ReadStarted - LastReadCompleted) * 1000000.0)));
+		}
 		const int32 ReadResult = av_read_frame(FormatContext, Packet);
+		LastReadCompleted = NowSeconds();
+		const int64 WaitMicros = static_cast<int64>((LastReadCompleted - ReadStarted) * 1000000.0);
+		ReadCalls.fetch_add(1);
+		ReadWaitMicros.fetch_add(WaitMicros);
+		ReadWaitMaxMicros.store(FMath::Max(ReadWaitMaxMicros.load(), WaitMicros));
 		if (ReadResult == AVERROR(EAGAIN))
 		{
 			FPlatformProcess::Sleep(0.002f);
@@ -822,7 +839,11 @@ void FDTCctvSession::ReadLoop()
 			}
 			PacketsReceived.fetch_add(1);
 			VideoPayloadBytes.fetch_add(FMath::Max(0, Packet->size));
+			const double PushStarted = NowSeconds();
 			Queue.Push(Packet);
+			const int64 PushMicros = static_cast<int64>((NowSeconds() - PushStarted) * 1000000.0);
+			PacketPushMicros.fetch_add(PushMicros);
+			PacketPushMaxMicros.store(FMath::Max(PacketPushMaxMicros.load(), PushMicros));
 		}
 		av_packet_unref(Packet);
 

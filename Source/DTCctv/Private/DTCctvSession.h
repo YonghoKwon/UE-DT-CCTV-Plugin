@@ -127,6 +127,12 @@ private:
 	std::atomic<double> NominalFps{ 0.0 };
 	std::atomic<EDTCctvState> State{ EDTCctvState::Idle };
 	std::atomic<int64> PacketsReceived{ 0 };
+	std::atomic<int64> ReadCalls{ 0 };
+	std::atomic<int64> ReadWaitMicros{ 0 };
+	std::atomic<int64> ReadWaitMaxMicros{ 0 };
+	std::atomic<int64> ReadGapMaxMicros{ 0 };
+	std::atomic<int64> PacketPushMicros{ 0 };
+	std::atomic<int64> PacketPushMaxMicros{ 0 };
 	std::atomic<int64> FramesDecoded{ 0 };
 	std::atomic<int64> FramesSuperseded{ 0 };
 	std::atomic<int64> DecodeErrors{ 0 };

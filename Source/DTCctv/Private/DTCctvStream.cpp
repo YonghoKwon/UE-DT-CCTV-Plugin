@@ -46,6 +46,12 @@ namespace
 		FDTCctvStreamStats Stats;
 		Session.FillStats(Stats);
 		Total.PacketsReceived += Stats.PacketsReceived;
+		Total.ReadCalls += Stats.ReadCalls;
+		Total.ReadWaitSeconds += Stats.ReadWaitSeconds;
+		Total.ReadWaitMaxSeconds = FMath::Max(Total.ReadWaitMaxSeconds, Stats.ReadWaitMaxSeconds);
+		Total.ReadGapMaxSeconds = FMath::Max(Total.ReadGapMaxSeconds, Stats.ReadGapMaxSeconds);
+		Total.PacketPushSeconds += Stats.PacketPushSeconds;
+		Total.PacketPushMaxSeconds = FMath::Max(Total.PacketPushMaxSeconds, Stats.PacketPushMaxSeconds);
 		Total.FramesDecoded += Stats.FramesDecoded;
 		Total.FramesSuperseded += Stats.FramesSuperseded;
 		Total.PacketsDropped += Stats.PacketsDropped;
@@ -377,6 +383,12 @@ FDTCctvStreamStats UDTCctvStream::GetStats() const
 		Session->FillStats(Stats);
 	}
 	Stats.PacketsReceived += Accumulated.PacketsReceived;
+	Stats.ReadCalls += Accumulated.ReadCalls;
+	Stats.ReadWaitSeconds += Accumulated.ReadWaitSeconds;
+	Stats.ReadWaitMaxSeconds = FMath::Max(Stats.ReadWaitMaxSeconds, Accumulated.ReadWaitMaxSeconds);
+	Stats.ReadGapMaxSeconds = FMath::Max(Stats.ReadGapMaxSeconds, Accumulated.ReadGapMaxSeconds);
+	Stats.PacketPushSeconds += Accumulated.PacketPushSeconds;
+	Stats.PacketPushMaxSeconds = FMath::Max(Stats.PacketPushMaxSeconds, Accumulated.PacketPushMaxSeconds);
 	Stats.FramesDecoded += Accumulated.FramesDecoded;
 	Stats.FramesSuperseded += Accumulated.FramesSuperseded;
 	Stats.PacketsDropped += Accumulated.PacketsDropped;
