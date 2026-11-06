@@ -193,10 +193,16 @@ bool FDTCctvHwFallbackTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("하드웨어 형식 제거 후 소프트웨어 선택"), FDTCctvSession::GetFormatCallback(Context, SoftwareFormats) == AV_PIX_FMT_NV12);
 	const AVPixelFormat PlanarFormats[] = { AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE };
 	TestTrue(TEXT("I420 단독 폴백 선택"), FDTCctvSession::GetFormatCallback(Context, PlanarFormats) == AV_PIX_FMT_YUV420P);
-	TestTrue(TEXT("읽기 스레드에 하드웨어 실패 전달"), Session.bHwFailed.load());
+	TestFalse(TEXT("사용 가능한 소프트웨어 형식은 재접속 오류가 아님"), Session.bHwFailed.load());
+	TestTrue(TEXT("소프트웨어 협상 상태를 유지"), Session.bSoftwareFormatFallback.load());
+	TestTrue(TEXT("같은 연결에서는 실패한 하드웨어 협상을 반복하지 않음"), FDTCctvSession::GetFormatCallback(Context, HardwareFormats) == AV_PIX_FMT_NV12);
+	TestEqual(TEXT("정상 소프트웨어 폴백은 재접속하지 않음"), Session.Reconnects.load(), 0);
 	FDTCctvStreamStats Stats;
 	Session.FillStats(Stats);
 	TestEqual(TEXT("실제 폴백을 디코더 통계에 표시"), Stats.DecoderName, FString(TEXT("software")));
+	const AVPixelFormat EmptyFormats[] = { AV_PIX_FMT_NONE };
+	TestTrue(TEXT("사용 가능한 형식이 없으면 실패 반환"), FDTCctvSession::GetFormatCallback(Context, EmptyFormats) == AV_PIX_FMT_NONE);
+	TestTrue(TEXT("진짜 협상 실패는 읽기 스레드에 전달"), Session.bHwFailed.load());
 	avcodec_free_context(&Context);
 	return true;
 }

@@ -10,6 +10,7 @@ extern "C"
 #include "libavutil/avutil.h"
 #include "libavutil/hwcontext.h"
 #include "libavutil/imgutils.h"
+#include "libavutil/pixdesc.h"
 #include "libswscale/swscale.h"
 }
 THIRD_PARTY_INCLUDES_END

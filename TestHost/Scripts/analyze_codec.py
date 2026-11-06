@@ -39,9 +39,11 @@ def analyze(folder, log, gpu_log, cpu_log, expected_hw=4):
         a, b = warm[0], warm[-1]
         seconds = float(b['t'])-float(a['t'])
         playing = [float(r['t']) for r in group if int(r['state']) == 2 and int(r['decoded']) > 0]
+        submitted = [float(r['t']) for r in group if int(r['displayed']) > 0]
         item = dict(channel=channel, decode_fps=(int(b['decoded'])-int(a['decoded']))/seconds,
                     display_fps=(int(b['displayed'])-int(a['displayed']))/seconds,
                     first_playing_upper_seconds=min(playing) if playing else None,
+                    first_displayed_upper_seconds=min(submitted) if submitted and windows else None,
                     decoder=b['decoder'], codec=b['codec'], source_width=int(b['src_w']))
         if windows:
             item['age'] = age_summary(b)
@@ -49,7 +51,7 @@ def analyze(folder, log, gpu_log, cpu_log, expected_hw=4):
     decoded = int(last['decoded'])-int(first['decoded'])
     displayed = int(last['displayed'])-int(first['displayed'])
     superseded = int(last['superseded'])-int(first['superseded'])
-    counts = dict(collections.Counter(r['decoder'] for r in latest))
+    counts = dict(collections.Counter(r['decoder'] or '(unknown)' for r in latest))
     if execution.get('exit_code') != 0 or duration < 80 or len(latest) != 16:
         failures.append('정상 종료·워밍업 제외80초·16채널 표본 기준 미달')
     if any(int(r['playing']) != 16 for r in steady):
@@ -131,6 +133,7 @@ def analyze(folder, log, gpu_log, cpu_log, expected_hw=4):
                 worst_channel_p95_ms=max(r['age']['p95_ms'] for r in channels) if windows else None,
                 age_limit_ms=age_limit if windows else None,decoder_counts=counts,channels=channels,
                 first_all_playing_upper_seconds=max(r['first_playing_upper_seconds'] or 1e99 for r in channels),
+                first_all_displayed_upper_seconds=max(r['first_displayed_upper_seconds'] or 1e99 for r in channels) if windows else None,
                 cpu=cpu,gpu=gpu,source_cpp=execution['source_cpp'],
                 scope='Windows 렌더링·PNG 직접 검수 대기' if windows else 'Linux nullrhi 디코딩만 판정. 표시·age·대체율·색·PNG는 미검증.',
                 method='FPS·age·대체는 처음10초 제외. 손실/오류/재연결은 시작 구간을 포함해 보존. 첫 Playing은1초 CSV 관측 상한. GPU는 보드 전체, 송출기는 파일 복사만 사용.')

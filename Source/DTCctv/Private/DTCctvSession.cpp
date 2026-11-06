@@ -334,20 +334,40 @@ int FDTCctvSession::InterruptCallback(void* Opaque)
 AVPixelFormat FDTCctvSession::GetFormatCallback(AVCodecContext* Context, const AVPixelFormat* Formats)
 {
 	FDTCctvSession* Session = static_cast<FDTCctvSession*>(Context->opaque);
-	for (const AVPixelFormat* Format = Formats; *Format != AV_PIX_FMT_NONE; ++Format)
+	if (!Session->bSoftwareFormatFallback.load())
 	{
-		if (static_cast<int32>(*Format) == Session->HwPixelFormat)
+		for (const AVPixelFormat* Format = Formats; *Format != AV_PIX_FMT_NONE; ++Format)
 		{
-			return *Format;
+			if (static_cast<int32>(*Format) == Session->HwPixelFormat)
+			{
+				return *Format;
+			}
 		}
 	}
-	UE_LOG(LogDTCctv, Warning, TEXT("디코더가 하드웨어 형식을 제공하지 않아 기본 형식을 사용합니다."));
-	const AVPixelFormat SoftwareFormat = avcodec_default_get_format(Context, Formats);
-	Session->bHwFailed.store(true);
+	AVPixelFormat SoftwareFormat = AV_PIX_FMT_NONE;
+	for (const AVPixelFormat* Format = Formats; *Format != AV_PIX_FMT_NONE; ++Format)
+	{
+		const AVPixFmtDescriptor* Descriptor = av_pix_fmt_desc_get(*Format);
+		if (Descriptor != nullptr && (Descriptor->flags & AV_PIX_FMT_FLAG_HWACCEL) == 0)
+		{
+			SoftwareFormat = *Format;
+			break;
+		}
+	}
 	if (SoftwareFormat != AV_PIX_FMT_NONE)
 	{
+		if (!Session->bSoftwareFormatFallback.exchange(true))
+		{
+			UE_LOG(LogDTCctv, Warning, TEXT("하드웨어 형식 협상 후 소프트웨어 형식으로 연결을 유지합니다."));
+		}
+		Session->bHwFailed.store(false);
 		FScopeLock ScopeLock(&Session->Lock);
 		Session->DecoderName = TEXT("software");
+	}
+	else
+	{
+		Session->bHwFailed.store(true);
+		UE_LOG(LogDTCctv, Warning, TEXT("디코더에 사용 가능한 소프트웨어 형식이 없어 다시 열어야 합니다."));
 	}
 	return SoftwareFormat;
 }
@@ -369,6 +389,7 @@ void FDTCctvSession::ReaderMain()
 		FirstFrameSeconds.store(0.0);
 		LastFrameSeconds.store(0.0);
 		bHwFailed.store(false);
+		bSoftwareFormatFallback.store(false);
 
 		bool bOpened = false;
 		{
@@ -536,7 +557,7 @@ bool FDTCctvSession::TryOpenDecoder(const AVCodec* Codec, AVHWDeviceType HwType)
 	}
 
 	CodecContext = Context;
-	const FString Decoder = bHardware ? UTF8_TO_TCHAR(av_hwdevice_get_type_name(HwType)) : TEXT("software");
+	const FString Decoder = bHardware && !bSoftwareFormatFallback.load() ? UTF8_TO_TCHAR(av_hwdevice_get_type_name(HwType)) : TEXT("software");
 	const FString Codecname = UTF8_TO_TCHAR(avcodec_get_name(Stream->codecpar->codec_id));
 	{
 		FScopeLock ScopeLock(&Lock);
@@ -597,7 +618,7 @@ void FDTCctvSession::ReadLoop()
 	{
 		const double LastFrame = LastFrameSeconds.load();
 		const EDTCctvOutputWatchdogAction WatchdogAction = DTCctvEvaluateOutputWatchdog(
-			NowSeconds(), WatchdogStart, FirstKeyPacketSeconds, LastFrame, Params.ReadTimeoutSeconds, HwPixelFormat >= 0);
+			NowSeconds(), WatchdogStart, FirstKeyPacketSeconds, LastFrame, Params.ReadTimeoutSeconds, HwPixelFormat >= 0 && !bSoftwareFormatFallback.load());
 		if (WatchdogAction != EDTCctvOutputWatchdogAction::None)
 		{
 			if (FirstKeyPacketSeconds == 0.0 && LastFrame == 0.0)
@@ -649,7 +670,7 @@ void FDTCctvSession::ReadLoop()
 		}
 
 		// 하드웨어 디코딩이 입력을 못 따라가면 이 채널은 소프트웨어로 옮긴다.
-		if (HwPixelFormat >= 0 && Queue.GetDroppedPackets() > DroppedAtStart)
+		if (HwPixelFormat >= 0 && !bSoftwareFormatFallback.load() && Queue.GetDroppedPackets() > DroppedAtStart)
 		{
 			UE_LOG(LogDTCctv, Warning, TEXT("%s: 하드웨어 디코딩 과부하로 다시 연결합니다. 키프레임 수신=%d"), *SafeUrl, FirstKeyPacketSeconds > 0.0 ? 1 : 0);
 			if (FirstKeyPacketSeconds > 0.0)

@@ -52,6 +52,12 @@ function Start-DTCctvSource
 		if($probe.Process.ExitCode -ne 0){throw '실제 RTSP ffprobe 실행 실패'}
 		Copy-Item -LiteralPath "$probePrefix.stdout.log" -Destination $probeFile
 	}
+	$actual=Get-Content -Raw -Encoding UTF8 -LiteralPath $probeFile|ConvertFrom-Json
+	$video=@($actual.streams)[0]
+	if([int]$video.width -le 0 -or [int]$video.height -le 0 -or -not $video.pix_fmt)
+	{
+		throw '실제 RTSP ffprobe에서 해상도·픽셀 형식을 확인하지 못했습니다. 게임 측정을 시작하지 않습니다.'
+	}
 	Write-DTCctvJson "$Out\$Tag.source.json" @{file=$sourceFile;path=$Path;copy_only=$true;ready_utc=$readyAt.ToString('o');probe=$probeFile}
 	if($DTCctvCodecLinuxSub -and $Path -eq 'cam' -and -not $PublisherOnly)
 	{

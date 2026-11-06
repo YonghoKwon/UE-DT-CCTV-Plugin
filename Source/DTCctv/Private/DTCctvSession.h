@@ -110,6 +110,7 @@ private:
 	std::atomic<bool> bStop{ false };
 	std::atomic<bool> bFinished{ false };
 	std::atomic<bool> bHwFailed{ false };
+	std::atomic<bool> bSoftwareFormatFallback{ false };
 	std::atomic<bool> bConsumerCanCatchUp{ false };
 	std::atomic<double> Deadline{ 0.0 };
 	std::atomic<double> LastFrameSeconds{ 0.0 };
