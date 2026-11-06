@@ -4,6 +4,24 @@ UE 5.3 프로젝트에서 RTSP CCTV를 표시하는 Windows·Linux용 C++ 플러
 
 CCTV-01F의 최종 C++는 `95cd411`입니다. Editor·전체 단위 15개·새 Win64/Linux 패키징을 완료했고, 소비자 정지 시 역압이 남는 결함을 수정했습니다. GT 3/5/10초와 렌더 정체, 지연·버스트 회귀, Windows 패키지·디코딩/로드 공존·UI·장애·소크는 통과했습니다. 100회 자원 비증가 FAIL과 Linux Vulkan ENV_BLOCKED가 남아 전체 판정은 **FAIL**입니다.
 
+## 코덱별 검증(CCTV-01G)
+
+H264 High B2·GOP12초, H265 Main 30/60fps·GOP12초·Main10·4K 및메인/서브혼합을 Windows·RHEL8로측정했습니다. 정상SW형식폴백에서불필요한재접속을없앤최종C++는9c98d85입니다. MJPEG4:2:2는재접속문제를고쳤지만Windows p9573ms와Linux16채널FPS미달및실제CUDA초기화불가가남아전체코덱판정은FAIL입니다.
+
+| 조건 | Windows decode/display·p95 | Linux SW16 | Linux 최대HW4 |
+|---|---|---|---|
+| C1 H264 High 1080p30 B2 GOP2초 | PASS 29.989/29.981, p95 20ms | PASS 30.011 / 최저 30.000 | PASS 30.006 / cuda4,software12 |
+| C2 H264 High 1080p30 GOP12초 | PASS 29.977/29.978, p95 19ms | PASS 30.011 / 최저 29.999 | PASS 30.000 / software12,cuda4 |
+| C3 H265 Main 1080p30 B2 GOP2초 | PASS 29.969/29.978, p95 21ms | PASS 29.978 / 최저 29.996 | PASS 30.011 / software12,cuda4 |
+| C4 H265 Main 1080p60 GOP2초 | PASS 59.989/59.589, p95 36ms | PASS 59.985 / 최저 59.990 | PASS 59.985 / cuda4,software12 |
+| C5 H265 Main 1080p30 GOP12초 | PASS 29.976/29.975, p95 21ms | PASS 30.009 / 최저 29.988 | PASS 30.011 / cuda4,software12 |
+| C6 H265 Main10 1080p30 | PASS 30.025/30.022, p95 22ms | PASS 29.978 / 최저 29.993 | PASS 29.979 / cuda4,software12 |
+| C7 H265 Main 4K30 | PASS 30.014/30.019, p95 31ms | FAIL 29.599 / 최저 27.829 | PASS 30.001 / software12,cuda4 |
+| C8 MJPEG 1080p30 4:2:2 | FAIL 29.724/29.793, p95 73ms | FAIL 27.756 / 최저 22.136 | FAIL 27.119 / software16 |
+| C9 H265 4K 메인/H264 640 서브 | PASS 30.032/30.028, p95 43ms | PASS 30.060 / 최저 29.997 | PASS 30.011 / cuda4,software12 |
+
+GOP2초·주1080p30 H264/H265와작은뷰H264640서브를본측정기준의시작설정으로권장합니다. 기본HW4는H265에서도유지했으며 `프로젝트설정 → Plugins → DT CCTV → MaxHardwareDecodeStreams`로조정합니다. 긴GOP첫화면대기·스레드설정·코드버전·HW미지원과운영점검명령은[코덱검증상세](docs/CODEC_VALIDATION.md)를참조하십시오. Linux렌더링·실카메라·실제동시인코딩부하는검증범위밖입니다. 입력규격을낮춘별도조건으로기존FAIL을바꾸지않았습니다.
+
 ## 프로젝트에 적용
 
 1. Git LFS가 설치된 환경에서 저장소를 받고 `git lfs pull`로 바이너리 원본을 준비합니다. DLL·LIB·버전 접미사 `.so`가 작은 LFS 포인터 텍스트인 상태로 빌드하지 않습니다.
