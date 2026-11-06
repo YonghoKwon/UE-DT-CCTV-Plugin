@@ -1,10 +1,12 @@
 # CCTV-01G 코덱 검증
 
-이 자료는 Ryzen 7 7800X3D(8코어16스레드), RTX4070Ti 12GiB, Windows 및 로컬 RHEL8.10 컨테이너의 합성 파일 반복 송출 결과입니다. 한 RTSP 경로를16클라이언트가 읽었습니다. 입력은사전인코딩 후복사송출했으며GPU인코더0%를확인했습니다. 판정은전체/채널별원본97%,손실·오류·재연결0,Windows대체율≤1%,p95≤70ms(30fps)/50ms(60fps),PNG직접검수입니다.
+Ryzen 7 7800X3D(8코어 16스레드), RTX 4070 Ti 12GiB, Windows와 로컬 RHEL 8.10 컨테이너에서 합성 파일을 반복 송출한 결과입니다. 한 RTSP 경로를 16클라이언트가 읽었습니다. 미리 인코딩한 파일을 복사 송출했고, 측정 중 GPU 인코더 사용률 0%를 확인했습니다.
+
+전체 평균과 각 채널의 FPS가 원본의 97% 이상이어야 합니다. 손실·오류·재연결은 0, Windows 대체율은 1% 이하, 채널별 frame age p95는 30fps 입력에서 70ms 이하, 60fps 입력에서 50ms 이하가 기준입니다. Windows PNG는 직접 열어 판정했습니다.
 
 ## 코덱별 결과
 
-Windows는 decode/display fps, Linux는 decode fps입니다. Linux nullrhi의 표시·색·PNG·age는 미검증입니다.
+Windows 열은 decode/display fps이며, Linux 열은 decode fps입니다. Linux nullrhi에서는 표시·색·PNG·age를 검증하지 못했습니다.
 
 | 조건 | Windows | Linux SW16 | Linux Auto 최대HW4 |
 |---|---|---|---|
@@ -18,32 +20,34 @@ Windows는 decode/display fps, Linux는 decode fps입니다. Linux nullrhi의 �
 | C8 MJPEG 1080p30 4:2:2 | FAIL 29.724/29.793, p95 73ms | FAIL 27.756 / 최저 22.136 | FAIL 27.119 / software16 |
 | C9 H265 4K 메인/H264 640 서브 | PASS 30.032/30.028, p95 43ms | PASS 30.060 / 최저 29.997 | PASS 30.011 / cuda4,software12 |
 
-C1~C7·C9의 정상 협상 기본 자료는 F최종C++95cd411입니다. 실패형식협상만 수정한9c98d85에서는 영향을받는MJPEG를새패키지로재측정하고,지연4조건·정지·패키지·장애·소크를별도로회귀합니다. 각숫자의코드버전과원자료는Saved/Reports/CCTV-01G/codec-matrix.json에있습니다. 이전자료를새코드의새측정으로표시하지않습니다.
+C1~C7·C9의 정상 협상 기본 자료는 F 최종 C++ `95cd411`입니다. 실패한 형식 협상을 수정한 `9c98d85`에서는 영향을 받는 MJPEG를 새 패키지로 재측정하고, 지연 4조건·정지·패키지·장애·소크를 별도로 회귀합니다. 각 수치의 코드 버전과 원자료는 `Saved/Reports/CCTV-01G/codec-matrix.json`에 있습니다. 이전 자료를 새 코드의 새 측정으로 표시하지 않습니다.
 
-C7 Linux SW16 기본설정의최저채널27.829fps를실패로보존했습니다. 실제틱60·SoftwareDecodeThreads=1 대조에서는채널별97%까지통과했으나CUDA혼합에서스레드1은미달이어서전체기본값을바꾸지않았습니다. CUDA4/SW12는스레드2 대조가통과했습니다.
+C7 Linux SW16 기본 설정의 최저 채널 27.829fps는 FAIL로 보존했습니다. 실제 틱 60·`SoftwareDecodeThreads=1` 대조에서는 채널별 97%까지 통과했습니다. 같은 스레드 1 설정의 CUDA 혼합은 미달이어서 전체 기본값을 바꾸지 않았습니다. CUDA4/SW12는 스레드 2 대조가 통과했습니다.
 
-MJPEG의CUDA형식초기화는이장치·라이브러리·4:2:2시료에서실패했고실제SW16으로폴백했습니다. HW4/SW12성공으로표시하지않습니다. 정상SW형식이제공됐는데도RTSP재접속을요청하던문제를고쳐11회→0회로확인했습니다. 실제사용가능형식이없으면실패신호를유지하며같은연결에서는실패한HW협상을반복하지않습니다. 수정후Windows p9573ms>70,스레드1대조81ms, Linux의97%미달은실패로남습니다. 단일파일에서변환을포함한CPU비용이증가했으나16RTSP의전달·스케줄링·큐대기까지완전히분해한원인확정과는구분합니다.
+이 장치·라이브러리·MJPEG 4:2:2 시료에서는 CUDA 형식 초기화가 실패해 실제 SW16으로 폴백했습니다. HW4/SW12 성공으로 표시하지 않습니다. 정상 SW 형식이 제공됐는데도 RTSP 재접속을 요청하던 문제는 고쳐 재연결 11회→0회를 확인했습니다. 사용 가능한 형식이 없으면 실패 신호를 유지하며, 같은 연결에서 실패한 HW 협상을 반복하지 않습니다.
+
+MJPEG 수정 후 Windows p95는 73ms로 70ms 기준을 넘었습니다. 스레드 1 대조는 81ms였고, Linux도 틱 60·스레드 수 대조 후 97% 기준에 미달했습니다. 단일 파일 진단에서 NV12 변환을 포함한 CPU 비용이 증가했으나, 16 RTSP의 전달·스케줄링·큐 대기까지 완전히 분해한 원인 확정과는 구분합니다.
 
 ## 지원 구성과 권장 설정
 
-포함된Windows DLL·Linux SO의 h264/hevc/mjpeg/mpeg4/vp9/av1 디코더를직접조회했습니다. AV1기본은libdav1d입니다. mpeg4·VP9·AV1은구성만확인했고실시간행렬은미수행입니다. Windows CUDA/D3D11VA와RHEL8 CUDA의실제Main10디코딩·P010다운로드를확인했습니다. 플러그인은P010·4:2:2를swscale NV12로변환하며HDR톤매핑검증은포함하지않습니다.
+포함된 Windows DLL·Linux SO의 h264/hevc/mjpeg/mpeg4/vp9/av1 디코더를 직접 조회했습니다. AV1 기본 디코더는 libdav1d입니다. MPEG4·VP9·AV1은 구성만 확인했고 실시간 행렬은 미수행입니다. Windows CUDA/D3D11VA와 RHEL 8 CUDA에서 실제 Main10 디코딩과 P010 다운로드를 확인했습니다. 플러그인은 P010·4:2:2를 swscale NV12로 변환하며, HDR 톤매핑 검증은 포함하지 않습니다.
 
-- 본시험의통과입력설정을기준으로주1080p30 H264 High 또는H265 Main,8비트4:2:0,GOP2초를시작점으로권장합니다. H264/H265 B2도검증했습니다. 60fps와Main10은위표의성공범위와CPU부하를확인해야합니다.
-- GOP12초는새연결의첫렌더등록/재생에약8~9초가걸린표본이있습니다. 빠른첫화면이필요하면GOP2초와상시연결을권장합니다. 벤더H264+/H265+전체동작을검증한것은아닙니다.
-- 작은뷰는H264 640x360서브,큰뷰만H265 4K메인으로쓰는C9구성이통과했습니다. 실제카메라주소는운영프로젝트의SubUrl에넣습니다.
-- 하드웨어예산은프로젝트설정 `Plugins → DT CCTV → MaxHardwareDecodeStreams` 또는 `[/Script/DTCctv.DTCctvSettings]`의같은키로조정합니다. H265기본4혼합경로가통과했으므로전역기본4를유지했습니다. 숫자를올려도미지원MJPEG형식이HW가능으로바뀌지는않습니다.
-- 소프트웨어스레드는같은설정의 `SoftwareDecodeThreads`입니다. C7 Linux SW전용에서틱60·스레드1을조건부권장하며혼합/H264전체에일괄적용하지않습니다.
-- MJPEG16채널30fps는본PC의위미달을수용해야하거나별도서버/입력설정검증이필요합니다. 해상도·FPS를낮춘새조건이나카메라H264대안을원래MJPEG조건의PASS로간주하지않습니다.
+- 통과한 입력 설정을 기준으로 1080p30 H264 High 또는 H265 Main, 8비트 4:2:0, GOP 2초를 시작점으로 권장합니다. H264/H265 B2도 검증했습니다. 60fps와 Main10은 위 표의 성공 범위와 CPU 부하를 확인해야 합니다.
+- GOP 12초는 새 연결의 첫 렌더 등록·재생에 약 8~9초가 걸린 표본이 있습니다. 빠른 첫 화면이 필요하면 GOP 2초와 상시 연결을 권장합니다. 벤더 H264+/H265+ 전체 동작을 검증한 것은 아닙니다.
+- 작은 뷰는 H264 640×360 서브, 큰 뷰만 H265 4K 메인으로 쓰는 C9 구성이 통과했습니다. 실제 카메라 주소는 운영 프로젝트의 `SubUrl`에 넣습니다.
+- 하드웨어 예산은 프로젝트 설정 `Game → DT CCTV → MaxHardwareDecodeStreams` 또는 `Config/DefaultGame.ini`의 `[/Script/DTCctv.DTCctvSettings]`에서 같은 키로 조정합니다. H265 기본 4채널 혼합 경로가 통과해 전역 기본값 4를 유지했습니다. 숫자를 올려도 미지원 MJPEG 형식이 HW 가능으로 바뀌지는 않습니다.
+- 소프트웨어 스레드는 같은 설정의 `SoftwareDecodeThreads`입니다. C7 Linux SW 전용에서 틱 60·스레드 1을 조건부 권장하며, 혼합/H264 전체에 일괄 적용하지 않습니다.
+- MJPEG 16채널 30fps는 본 PC에서 미달하므로 별도 서버·입력 설정 검증이 필요합니다. 해상도·FPS를 낮춘 새 조건이나 카메라 H264 대안을 원래 MJPEG 조건의 PASS로 간주하지 않습니다.
 
-운영서버사양이제공되지않아확정성능예측은하지않았습니다. 16x4K30은약3.981Gpixel/s,97%기준전체465.6fps와각채널29.1fps를동시에만족하는실측처리량이필요합니다. 실제카메라복잡도·네트워크·Vulkan렌더링·동시PixelStreaming부하는별도수용항목입니다.
+운영 서버 사양이 제공되지 않아 확정 성능을 예측하지 않았습니다. 16×4K30은 약 3.981Gpixel/s입니다. 97% 기준 전체 465.6fps와 각 채널 29.1fps를 동시에 만족하는 실측 처리량이 필요합니다. 실제 카메라 복잡도·네트워크·Vulkan 렌더링·동시 Pixel Streaming 부하는 별도 수용 항목입니다.
 
 ## Linux 운영 점검
 
-기존인자없는GPU/60fps점검과 `--software-only` 동작을보존했습니다. 코덱옵션을지정하면100초실행·처음10초제외80초이상·원본97%·채널별FPS·코덱일치·오류0을판정합니다.
+기존 인자 없는 GPU/60fps 점검과 `--software-only` 동작을 보존했습니다. 코덱 옵션을 지정하면 100초 실행, 처음 10초 제외 후 80초 이상, 원본 97%, 채널별 FPS, 코덱 일치, 오류 0을 판정합니다.
 
 ```bash
 TestHost/Scripts/linux_server_check.sh /path/to/package "$CAMERA_URL" --software-only --codec hevc --fps 30
 TestHost/Scripts/linux_server_check.sh /path/to/package "$CAMERA_URL" --decode-only --codec hevc --fps 30
 ```
 
-`--decode-only`는nullrhi Auto CUDA4/SW12범위이며렌더링성공을뜻하지않습니다. 두옵션은Main10시료로실행해통과했습니다. 기존60fps기본분석호환과잘못된코덱거부도검증했습니다. URL은환경변수경로로전달하고로그는가립니다. 원격실GPU서버의Vulkan은본작업에서ENV_BLOCKED를계승합니다.
+`--decode-only`는 nullrhi Auto CUDA4/SW12 범위이며 렌더링 성공을 뜻하지 않습니다. 두 옵션은 Main10 시료로 실제 실행해 통과했습니다. 기존 60fps 기본 분석 호환과 잘못된 코덱 거부도 검증했습니다. URL은 환경변수 경로로 전달하고 로그는 가립니다. 원격 실 GPU 서버의 Vulkan은 본 작업에서 ENV_BLOCKED를 계승합니다.
