@@ -1,8 +1,8 @@
 # DTCctv
 
-UE 5.3 프로젝트에서 RTSP CCTV를 표시하는 Windows·Linux용 C++ 플러그인입니다. DTCore나 운영 프로젝트에 의존하지 않으며 플러그인 안에 블루프린트·맵·위젯 에셋을 넣지 않습니다. 오디오는 지원하지 않습니다.
+UE 5.3 프로젝트에서 RTSP CCTV를 표시하는 Windows·Linux용 C++ 플러그인입니다. DTCore가 없는 프로젝트에서도 동작하며, DTCore가 있는 패키지에서는 선택적으로 로그를 연동합니다. 플러그인 안에 블루프린트·맵·위젯 에셋을 넣지 않습니다. 오디오는 재생하지 않고 SDP 트랙 정보만 조회합니다.
 
-CCTV-01F의 최종 C++는 `95cd411`입니다. Editor·전체 단위 15개·새 Win64/Linux 패키징을 완료했고, 소비자 정지 시 역압이 남는 결함을 수정했습니다. GT 3/5/10초와 렌더 정체, 지연·버스트 회귀, Windows 패키지·디코딩/로드 공존·UI·장애·소크는 통과했습니다. 100회 자원 비증가 FAIL과 Linux Vulkan ENV_BLOCKED가 남아 전체 판정은 **FAIL**입니다.
+CCTV-01F의 최종 C++는 `95cd411`입니다. Editor·전체 단위 15개·새 Win64/Linux 패키징을 완료했고, 소비자 정지 시 역압이 남는 결함을 수정했습니다. GT 3/5/10초와 렌더 정체, 지연·버스트 회귀, Windows 패키지·디코딩/로드 공존·UI·장애·소크는 통과했습니다. 100회 자원 비증가 측정의 원시 판정은 FAIL이며, GPU 약+0.12MiB·핸들 최대1692→1696은 2026-11-06 사용자 결정으로 **수용됨, 운영에서 장시간 관찰 권장**입니다. 해당 항목의 추가 수정은 수행하지 않습니다. Linux Vulkan 렌더링은 ENV_BLOCKED입니다.
 
 ## 코덱별 검증(CCTV-01G)
 
@@ -21,6 +21,81 @@ H264 High B2·GOP 12초, H265 Main 30/60fps·GOP 12초·Main10·4K 및 메인/�
 | C9 H265 4K 메인/H264 640 서브 | PASS 30.032/30.028, p95 43ms | PASS 30.060 / 최저 29.997 | PASS 30.011 / cuda4,software12 |
 
 GOP 2초·1080p30 H264/H265와 작은 뷰의 H264 640 서브를 본 측정 기준의 시작 설정으로 권장합니다. 기본 HW4는 H265에서도 유지했으며 `프로젝트 설정 → Game → DT CCTV → MaxHardwareDecodeStreams`로 조정합니다. 긴 GOP의 첫 화면 대기·스레드 설정·코드 버전·HW 미지원과 운영 점검 명령은 [코덱 검증 상세](docs/CODEC_VALIDATION.md)를 참조하십시오. Linux 렌더링·실제 카메라·실제 동시 인코딩 부하는 미검증입니다. 입력 규격을 낮춘 별도 조건으로 기존 FAIL을 바꾸지 않았습니다.
+
+## 현장 점검 방법 (CCTV-01J)
+
+현장 점검 화면은 운영 프로젝트에 도구를 설치하지 않고 **TestHost 패키지**에서 실행합니다. Windows 실행 파일은 `<패키지>/Windows/DTCctvTestHost/Binaries/Win64/DTCctvTestHost.exe`입니다. 별도 명령줄 인자 없이 실행하면 점검 화면이 열립니다. 현재 PC에서 만든 패키지의 실제 위치와 검증 자료는 `Saved/Reports/CCTV-01J/result.json`에 기록합니다.
+
+1. 메인 RTSP 주소와 필요한 서브 주소를 넣습니다. 사용자 이름·비밀번호를 별도 필드로 넣거나 URL의 userinfo 형식을 사용할 수 있습니다. 입력 필드는 가림 처리되고, **추가** 후 목록에는 계정이 가려진 주소가 보입니다.
+2. **추가**·**삭제**로 주소를 1~16개 준비합니다. 전송 방식은 TCP/UDP로 선택할 수 있습니다. **점검 초**의 기본값은60이며 초기10초보다 큰 시간을 지정해야 합니다.
+3. **시작**을 누르면 격자 영상에 상태·코덱/프로파일·해상도·원본/디코드/표시 FPS·HW/SW·재연결·손실·오류·대체·frame age·최근 오류가 표시됩니다. 창 크기와 **1열/2열/4열**을 바꿔 크기와 서브 전환도 확인할 수 있습니다.
+4. 시간이 지나면 채널별 결과 표와 보고서 경로가 표시됩니다. **중지**로 조기 종료한 점검은 완료 구간 부족 또는 중단 사유로 FAIL입니다.
+
+| 판정 | 의미 |
+|---|---|
+| PASS | 초기10초 이후 재생 유지, 재연결·패킷 손실·디코딩 오류0, 표시가 원본97% 이상이고 경고 없음 |
+| WARN | 재생은 되지만 FPS·지속 재생 조건 미달, SW 디코딩, 표시 전 대체, 첫 재생5초 초과, 원본 FPS 미확정 또는 화면 없는 표시 미검증 |
+| FAIL | 연결·인증·코덱 오류로 재생을 못 했거나 점검 중 재생이 중단됨 |
+
+보고서는 실행 프로젝트의 `Saved/CctvCheck/<시각-PID-ID>/`에 `report.md`, `report.json`, `channel-NN.csv`, `screenshot.png`로 저장합니다. 화면과 UE 로그에 실제 절대 경로가 표시됩니다. 표시 FPS는 렌더 명령 등록 횟수이며 frame age는 디코더 반환~등록 구간입니다. GPU 완료·모니터 표시·네트워크 왕복 지연은 별도 범위입니다.
+
+**주소 저장(계정 제외)**는 사용자가 누를 때만 `Saved/CctvCheck/addresses.json`을 만듭니다. userinfo를 제거하고 password/token 등 민감 query 값을 가립니다. 비밀번호를 보관하는 옵션은 없습니다. 재사용 시 필요한 인증을 다시 입력합니다. `Saved/`는 Git 추적에서 제외됩니다.
+
+### 파일 기반 자동 점검과 Linux
+
+목록 JSON은 다음 형식입니다. 실제 자격증명을 넣는 입력 파일은 운영자가 별도로 보호하며, 보고서에는 가려진 주소만 남습니다.
+
+```json
+{
+  "schema_version": 1,
+  "channels": [
+    {
+      "url": "rtsp://camera-host/stream",
+      "sub_url": "",
+      "username": "",
+      "password": "",
+      "transport": "tcp",
+      "software_only": false
+    }
+  ]
+}
+```
+
+```bash
+<패키지>/Linux/DTCctvTestHost.sh -nullrhi -unattended -CctvCheckList=/opt/cctv/check.json -CctvCheckSeconds=60
+python3 TestHost/Scripts/cctv_check_result.py <실제-보고서-경로>/report.json
+```
+
+RHEL8에 python3 명령이 없으면 기존 `/usr/libexec/platform-python`으로 결과 검증기를 실행할 수 있습니다. `-nullrhi`는 연결·디코딩·원인과 CSV/JSON/MD를 점검하며, 표시·색·스크린샷 미검증을 WARN과 `screenshot_status=ENV_BLOCKED`로 보고합니다. 패키지의 Saved 디렉터리는 쓰기 가능해야 합니다. 기존 `linux_server_check.sh --software-only`·`--decode-only --codec hevc --fps 30`은 기존 디코딩 수용 기준으로 함께 사용할 수 있습니다.
+
+자동화 결과 검증기 `cctv_check_result.py`는 JSON의 채널·전체 판정 일관성을 확인하고 **PASS0 / WARN2 / FAIL1**을 반환합니다. `--native-exit-code <실행코드>`를 함께 주면 비정상 프로세스 종료도 거부합니다. UE5.3 Windows의 비강제 종료에서 네이티브 코드0이 관측되므로 Windows 자동화도 이 JSON 결과 검증기를 사용합니다.
+
+### 스트림 정보 API와 DTCore 로그
+
+`UDTCctvStream::GetStreamInfo()`의 BlueprintReadOnly `FDTCctvStreamInfo`에서 계정 가린 주소·전송·SDP 도구/세션·트랙·선택 인덱스·코덱/프로파일/레벨·픽셀/비트/크로마·선언 FPS/B·디코더/이유를 조회합니다. 재생10초 이후 실측 디코드 FPS·압축 비디오 payload 평균 bitrate·관측 GOP·B 사용을 한 번 기록합니다. 긴 GOP의 두 번째 키프레임이 늦으면 관측 완료 시 GOP를 추가 기록합니다. 전송 후 프레임 형식은 HW 다운로드 직후·swscale 전의 CPU 형식입니다. 오디오는 SDP에서 열거하며 수신·재생 대상은 비디오입니다.
+
+DTCctv를 운영 프로젝트에 설치할 때 DTCore가 있으면 소스를 해당 프로젝트에서 다시 빌드합니다. Build.cs가 프로젝트의 `Plugins/DTCore` 또는 AdditionalPluginDirectories의 DTCore와 로그 헤더를 확인해 `DTCCTV_WITH_DTCORE=1`·모듈 의존성을 선택하고, 없거나 명시적으로 비활성화됐으면0으로 빌드합니다. `.uplugin`의 DTCore 참조는 Optional입니다. TestHost에는 DTCore를 넣지 않습니다.
+
+Editor 빌드(PIE 포함)는 `LogDTCctv`에 기록합니다. DTCore가 있는 패키지는 연결·재연결·상태·스트림 정보·오류를 게임 스레드에서 `UDxLogSubsystem::WriteLog(..., false)`로 전달합니다. 날짜별 `DxLog_YYYY-MM-DD.log`의 `[DTCctv]` 행과 UE 로그를 확인합니다. DTCore/서브시스템이 준비되지 않았거나 종료 중이면 UE 로그로 기록합니다. GameInstance와 서브시스템은 약한 참조로 다룹니다.
+
+```ini
+[/Script/DTCctv.DTCctvSettings]
+bMirrorPackagedLogsToUE=True
+```
+
+기본값 True는 DTCore 파일과 UE 양쪽에 남깁니다. False는 준비된 DTCore 패키지의 실행 중 이벤트를 파일로만 보냅니다. 새 스트림부터 반영되며 DTCore 파일 위치는 DTCore의 LogDirectory 설정을 따릅니다. 운영 프로젝트의 실제 적용·현장 장시간 수용은 사용자가 진행합니다.
+
+### 화면 유무에 따른 실행 방법
+
+Windows에서 영상을 확인할 때는 일반 창으로 실행합니다. 자동 목록 입력도 같은 화면에서 사용할 수 있습니다.
+
+```powershell
+& '<패키지>\Windows\DTCctvTestHost\Binaries\Win64\DTCctvTestHost.exe' -Windowed -ResX=1280 -ResY=900 '-CctvCheckList=C:\cctv\check.json' -CctvCheckSeconds=60
+```
+
+UE5.3의 DX12 `-RenderOffScreen` 시작 경로에서는 `FD3D12Viewport::Resize`의 `SwapChain4.GetReference()` ensure를 플러그인 비활성 대조에서도 확인했습니다. CCTV-01G의 비정상 종료 때는 종료 중 Landscape의 `MTAccessDetector` 호출 스택도 남았습니다. 이 자료만으로 스택 오버플로의 원인을 확정하지 않습니다. 재현 횟수·호출 스택과 대조 조건의 차이는 CCTV-01J 결과에 기록합니다. `-RenderOffScreen`을 현장 점검의 기본 실행 방법으로 사용하지 않습니다.
+
+화면이 없는 서버의 연결·디코딩 점검은 위 Linux 예시의 `-nullrhi`를 사용합니다. 이 경로는 DX12 스왑체인과 Landscape 렌더링을 만들지 않으며, 표시·스크린샷은 미검증 WARN으로 남깁니다. 화면이 필요한 수용 검증은 일반 창이나 렌더링 가능한 Linux 환경에서 별도로 수행합니다.
 
 ## 프로젝트에 적용
 
@@ -195,7 +270,7 @@ Close/Open30회 마지막10회의 Private 기울기는0.782MiB/회, GPU 첫끝 �
 
 `fault_test.ps1`도 기본적으로 실행하지 않으며, 실행 시 직접 시작한 PID의 생성 시각과 실행 경로를 확인한 후에만 종료합니다. CCTV-01C·01D에서 실행기와 자원 수집·자체 프로세스 및 컨테이너 정리 경로를 실제 사용했습니다.
 
-측정용 Windows 게임은 숨김 창 대신 `-RenderOffScreen`으로 실행하도록 준비했습니다. `WindowStyle Hidden`은 mediamtx·ffmpeg에만 적용합니다. 첫 Windows 측정은 워밍업 뒤 `output_w > 0`과 최종 PNG의 비검은 픽셀 표본을 확인하며, 0 크기·검은 화면·PNG 읽기 실패는 `INVALID`로 기록합니다. 이 확인은 오프스크린 렌더링이 실제로 동작하는지 점검하기 위한 것이며, 화면 품질과 전환 깜빡임의 직접 검수를 대신하지 않습니다. CCTV-01C에서 오프스크린·1920×1080 PNG와 양수 출력 크기를 확인했습니다.
+CCTV-01C 측정에서는 `-RenderOffScreen`·1920×1080 PNG와 양수 출력 크기를 확인했습니다. 이후 CCTV-01G의 비정상 종료를 계기로 현장 점검의 기본 실행은 위 일반 창·서버 `-nullrhi` 경로를 사용합니다. `WindowStyle Hidden`은 mediamtx·ffmpeg에만 적용합니다. 첫 Windows 측정은 워밍업 뒤 `output_w > 0`과 최종 PNG의 비검은 픽셀 표본을 확인하며, 0 크기·검은 화면·PNG 읽기 실패는 `INVALID`로 기록합니다. 이 확인은 화면 품질과 전환 깜빡임의 직접 검수를 대신하지 않습니다.
 
 기본 실행기 결과는 `Saved/Reports/CCTV-01/pending-<시각>/`, 큰 로그는 `Saved/Logs/CCTV-01/`에 둡니다. CCTV-01D 결과·로그는 각각 `Saved/Reports/CCTV-01D/`, `Saved/Logs/CCTV-01D/`에 있습니다. 패키지는 저장소 밖 기존 임시 폴더를 사용합니다. Windows 16채널 1080p60 기준은 60초 이상, 평균 디코딩·표시 각각 58fps 이상, 패킷 손실·재연결 0으로 유지합니다. nullrhi는 디코딩 범위만 판정하고 렌더링과 구분합니다. CCTV-01D의 최종 게이트 판정에는 검수 대기 항목이 없습니다.
 
