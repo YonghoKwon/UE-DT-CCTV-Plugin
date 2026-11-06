@@ -98,7 +98,7 @@ def build(final=False):
             'G에 기록된 ffprobe.exe가 현재 캐시에 없어 최초 스트림 준비가 중단됐습니다. H60 생성 파일과 실패 이력을 보존하고, 새 다운로드 없이 기존 FFmpeg 입력 메타데이터와 showinfo로7종 코덱·해상도·FPS·픽셀 형식·GOP·C1 B프레임을 검증했습니다. 원로그·파일SHA256은 `probes/`와 `source-catalog.json`에 있습니다. 실제 측정에서는 미리 인코딩한 파일을 복사 송출하며 GPU 인코딩 부하를 추가하지 않습니다.','',
             '## 근거와 미수행','',
             '조합별 CSV·PNG·GPU/NVDEC·CPU/RSS·컨테이너 생성/정리·실행 로그는 `measurements/`, 종합 수치는 `comparison.csv`, 상세 경계 및 실패 이력은 `result.json`에 있습니다. 중간 보고의 Windows REVIEW_REQUIRED는 수치 통과 후 직접 PNG 검수가 남았다는 뜻입니다.','']+['- '+x for x in limits]+['','미측정은 NOT_RUN, 실제 미달은 FAIL로 유지합니다. 원인 및 병목은 해당 실패 경계의 자원 수치로 구분하며 성능 기준과 기본값은 변경하지 않습니다.','',
-            '## 결정 필요','', '추가 결정 없음. 운영 서버에서는01J 점검 도구로 다시 검증해야 합니다. push·PR·merge 없음.']
+            '## 결정 필요','', ('미완료 경로의 별도 검증 시간 배정 여부가 남아 있습니다. 시간 예비안에 따라 이번 회차는 해당 경로를 미확정·NOT_RUN으로 남겼습니다.' if any(not b['complete'] for b in boundaries) else '추가 결정 없음.')+' 운영 서버에서는01J 점검 도구로 다시 검증해야 합니다. push·PR·merge 없음.']
     (P/'RESULT.md').write_text('\n'.join(lines)+'\n',encoding='utf-8')
     return result
 if __name__=='__main__':
