@@ -43,7 +43,7 @@ def save_case(tag):
 
 def run_case(codec,mode,count,attempt):
     c=read(REPORT/'checkpoint.json')
-    if dt.datetime.now(dt.timezone.utc)>=dt.datetime.fromisoformat(c['deadline_utc']):raise TimeoutError('4시간 실행 예산 종료')
+    if c.get('deadline_enabled',True) and dt.datetime.now(dt.timezone.utc)>=dt.datetime.fromisoformat(c['deadline_utc']):raise TimeoutError('4시간 실행 예산 종료')
     tag='{}-{}-n{}-a{}'.format(codec,mode,count,attempt)
     p=REPORT/'measurements'/tag
     if (p/'capacity-analysis.json').exists():return read(p/'capacity-analysis.json')
