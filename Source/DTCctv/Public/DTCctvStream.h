@@ -82,6 +82,7 @@ private:
 	void RenderLatestFrame();
 	void UpdateStats();
 	void LogStreamInfo();
+	void WriteEventLog(const FString& Message, ELogVerbosity::Type Verbosity = ELogVerbosity::Log) const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextureRenderTarget2D> Texture;

@@ -22,7 +22,7 @@ namespace
 	constexpr double StatsWindowSeconds = 1.0;
 	constexpr int32 MaxRenderCommandsInFlight = 3;
 
-	FDTCctvSessionParams MakeParams(const FDTCctvStreamConfig& Config, const FString& Url)
+	FDTCctvSessionParams MakeParams(const FDTCctvStreamConfig& Config, const FString& Url, const UObject* WorldContext)
 	{
 		const UDTCctvSettings* Settings = GetDefault<UDTCctvSettings>();
 		FDTCctvSessionParams Params;
@@ -37,6 +37,7 @@ namespace
 		Params.MaxQueuedPackets = Settings->MaxQueuedPackets;
 		Params.MaxHardwareDecodeStreams = Settings->MaxHardwareDecodeStreams;
 		Params.SoftwareDecodeThreads = Settings->SoftwareDecodeThreads;
+		Params.LogContext = DTCctvMakeLogContext(WorldContext, Settings->bMirrorPackagedLogsToUE);
 		return Params;
 	}
 
@@ -86,7 +87,7 @@ void UDTCctvStream::Open(const FDTCctvStreamConfig& InConfig)
 
 	if (Config.Url.IsEmpty())
 	{
-		UE_LOG(LogDTCctv, Warning, TEXT("스트림 주소가 비어 있습니다."));
+		WriteEventLog(FString::Printf(TEXT("스트림 주소가 비어 있습니다.")), ELogVerbosity::Warning);
 		return;
 	}
 
@@ -128,7 +129,7 @@ void UDTCctvStream::StartSession(bool bSubStream)
 {
 	const FString& Url = bSubStream ? Config.SubUrl : Config.Url;
 	TSharedPtr<FDTCctvSession, ESPMode::ThreadSafe> NewSession =
-		MakeShared<FDTCctvSession, ESPMode::ThreadSafe>(MakeParams(Config, Url));
+		MakeShared<FDTCctvSession, ESPMode::ThreadSafe>(MakeParams(Config, Url, GetOuter()));
 	if (ViewSize.X > 0.0 && ViewSize.Y > 0.0)
 	{
 		// 알고 있는 표시 크기를 먼저 전달해 첫 프레임의 원본 크기 임시 할당을 줄인다.
@@ -354,6 +355,7 @@ void UDTCctvStream::Tick(float DeltaTime)
 	if (NewState != LastState)
 	{
 		LastState = NewState;
+		WriteEventLog(FString::Printf(TEXT("상태 변경 | 주소=%s | 상태=%d"), *DTCctvMaskUrlCredentials(Config.Url), static_cast<int32>(NewState)));
 		OnStateChanged.Broadcast(this, LastState);
 		// 콜백에서 Close가 호출되었을 수 있다.
 		if (!Session.IsValid())
@@ -453,7 +455,7 @@ void UDTCctvStream::LogStreamInfo()
 	}
 	if (!bLoggedConnectionInfo)
 	{
-		UE_LOG(LogDTCctv, Log, TEXT("연결정보 | %s"), *DTCctvInfoSummary(Info));
+		WriteEventLog(FString::Printf(TEXT("연결정보 | %s"), *DTCctvInfoSummary(Info)), ELogVerbosity::Log);
 		bLoggedConnectionInfo = true;
 	}
 	else
@@ -461,22 +463,28 @@ void UDTCctvStream::LogStreamInfo()
 		const FString Changes = DTCctvInfoChanges(LoggedInfo, Info);
 		if (!Changes.IsEmpty())
 		{
-			UE_LOG(LogDTCctv, Log, TEXT("스트림 정보 변경 | %s"), *Changes);
+			WriteEventLog(FString::Printf(TEXT("스트림 정보 변경 | %s"), *Changes), ELogVerbosity::Log);
 		}
 	}
 	if (Info.bStabilized && !bLoggedStabilized)
 	{
-		UE_LOG(LogDTCctv, Log, TEXT("안정화정보 | 주소=%s | 실측FPS=%.3f | 평균비디오비트레이트=%lldbps | GOP=%.3f초/%d프레임 | GOP관측=%d | 실제B프레임=%d"),
-			*Info.SafeUrl, Info.MeasuredFps, Info.MeasuredBitrateBps, Info.GopSeconds, Info.GopFrames, Info.bMeasuredGop, Info.bObservedBFrames);
+		WriteEventLog(FString::Printf(TEXT("안정화정보 | 주소=%s | 실측FPS=%.3f | 평균비디오비트레이트=%lldbps | GOP=%.3f초/%d프레임 | GOP관측=%d | 실제B프레임=%d"),
+			*Info.SafeUrl, Info.MeasuredFps, Info.MeasuredBitrateBps, Info.GopSeconds, Info.GopFrames, Info.bMeasuredGop, Info.bObservedBFrames), ELogVerbosity::Log);
 		bLoggedStabilized = true;
 		bLoggedGop = Info.bMeasuredGop;
 	}
 	else if (Info.bStabilized && Info.bMeasuredGop && !bLoggedGop)
 	{
-		UE_LOG(LogDTCctv, Log, TEXT("안정화정보 추가 | 주소=%s | GOP=%.3f초/%d프레임"), *Info.SafeUrl, Info.GopSeconds, Info.GopFrames);
+		WriteEventLog(FString::Printf(TEXT("안정화정보 추가 | 주소=%s | GOP=%.3f초/%d프레임"), *Info.SafeUrl, Info.GopSeconds, Info.GopFrames), ELogVerbosity::Log);
 		bLoggedGop = true;
 	}
 	LoggedInfo = Info;
 	LoggedInfoRevision = Revision;
 	InfoSession = Session;
+}
+
+void UDTCctvStream::WriteEventLog(const FString& Message, ELogVerbosity::Type Verbosity) const
+{
+	const FDTCctvLogContext Context = DTCctvMakeLogContext(GetOuter(), GetDefault<UDTCctvSettings>()->bMirrorPackagedLogsToUE);
+	DTCctvLogEvent(Context, Message, Verbosity);
 }

@@ -7,6 +7,7 @@
 #include "DTCctvTypes.h"
 #include "DTCctvVideoFrame.h"
 #include "DTCctvInfoUtils.h"
+#include "DTCctvLog.h"
 #include "HAL/CriticalSection.h"
 #include <atomic>
 
@@ -26,6 +27,7 @@ struct FDTCctvSessionParams
 	int32 MaxQueuedPackets = 120;
 	int32 MaxHardwareDecodeStreams = 4;
 	int32 SoftwareDecodeThreads = 2;
+	FDTCctvLogContext LogContext;
 };
 
 /**

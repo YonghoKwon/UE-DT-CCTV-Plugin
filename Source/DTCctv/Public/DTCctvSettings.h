@@ -33,4 +33,8 @@ public:
 	/** 소프트웨어 디코딩 때 채널별 FFmpeg 스레드 수. */
 	UPROPERTY(config, EditAnywhere, Category = "DTCctv", meta = (ClampMin = "1"))
 	int32 SoftwareDecodeThreads = 2;
+
+	/** DTCore 패키지 로그를 UE 로그에도 남긴다. 새 스트림부터 적용한다. */
+	UPROPERTY(config, EditAnywhere, Category = "DTCctv|Logging")
+	bool bMirrorPackagedLogsToUE = true;
 };

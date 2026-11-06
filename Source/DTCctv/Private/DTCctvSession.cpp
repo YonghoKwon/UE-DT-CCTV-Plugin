@@ -186,7 +186,7 @@ void FDTCctvSession::Start()
 		ReaderWorker.Reset();
 		RequestStop();
 		bFinished.store(true);
-		UE_LOG(LogDTCctv, Error, TEXT("읽기 스레드를 시작하지 못했습니다: %s"), *DTCctvMaskUrlCredentials(Params.Url));
+		DTCctvLogEvent(Params.LogContext, FString::Printf(TEXT("읽기 스레드를 시작하지 못했습니다: %s"), *DTCctvMaskUrlCredentials(Params.Url)), ELogVerbosity::Error);
 	}
 }
 
@@ -451,7 +451,7 @@ void FDTCctvSession::SetError(const FString& Stage, int32 Error)
 		LastError = Message;
 		LastErrorCode = Error;
 	}
-	UE_LOG(LogDTCctv, Warning, TEXT("%s: %s"), *DTCctvMaskUrlCredentials(Params.Url), *Message);
+	DTCctvLogEvent(Params.LogContext, FString::Printf(TEXT("%s: %s"), *DTCctvMaskUrlCredentials(Params.Url), *Message), ELogVerbosity::Warning);
 }
 
 void FDTCctvSession::Retire(TSharedPtr<FDTCctvSession, ESPMode::ThreadSafe> Session)
@@ -521,7 +521,7 @@ AVPixelFormat FDTCctvSession::GetFormatCallback(AVCodecContext* Context, const A
 	{
 		if (!Session->bSoftwareFormatFallback.exchange(true))
 		{
-			UE_LOG(LogDTCctv, Warning, TEXT("하드웨어 형식 협상 후 소프트웨어 형식으로 연결을 유지합니다."));
+			DTCctvLogEvent(Session->Params.LogContext, FString::Printf(TEXT("하드웨어 형식 협상 후 소프트웨어 형식으로 연결을 유지합니다.")), ELogVerbosity::Warning);
 		}
 		Session->bHwFailed.store(false);
 		FScopeLock ScopeLock(&Session->Lock);
@@ -530,7 +530,7 @@ AVPixelFormat FDTCctvSession::GetFormatCallback(AVCodecContext* Context, const A
 	else
 	{
 		Session->bHwFailed.store(true);
-		UE_LOG(LogDTCctv, Warning, TEXT("디코더에 사용 가능한 소프트웨어 형식이 없어 다시 열어야 합니다."));
+		DTCctvLogEvent(Session->Params.LogContext, FString::Printf(TEXT("디코더에 사용 가능한 소프트웨어 형식이 없어 다시 열어야 합니다.")), ELogVerbosity::Warning);
 	}
 	return SoftwareFormat;
 }
@@ -542,6 +542,7 @@ void FDTCctvSession::ExtendDeadline(double Seconds)
 
 void FDTCctvSession::ReaderMain()
 {
+	const FDTCctvLogScope LogScope(Params.LogContext);
 	FDTCctvBackoff Backoff(Params.MinReconnectDelaySeconds, Params.MaxReconnectDelaySeconds);
 	const FString SafeUrl = DTCctvMaskUrlCredentials(Params.Url);
 	bool bFirstAttempt = true;
@@ -573,7 +574,7 @@ void FDTCctvSession::ReaderMain()
 			}
 			else
 			{
-				UE_LOG(LogDTCctv, Error, TEXT("디코딩 스레드를 시작하지 못했습니다: %s"), *SafeUrl);
+				DTCctvLogEvent(Params.LogContext, FString::Printf(TEXT("디코딩 스레드를 시작하지 못했습니다: %s"), *SafeUrl), ELogVerbosity::Error);
 			}
 
 			Queue.Abort();
@@ -595,7 +596,7 @@ void FDTCctvSession::ReaderMain()
 		Reconnects.fetch_add(1);
 		State.store(EDTCctvState::Reconnecting);
 		const float Delay = Backoff.Next(StableSeconds, FMath::FRand());
-		UE_LOG(LogDTCctv, Log, TEXT("%s: %.1f초 후 재연결합니다."), *SafeUrl, Delay);
+		DTCctvLogEvent(Params.LogContext, FString::Printf(TEXT("%s: %.1f초 후 재연결합니다."), *SafeUrl, Delay), ELogVerbosity::Log);
 		StopEvent->Wait(FTimespan::FromSeconds(Delay));
 	}
 
@@ -656,7 +657,7 @@ bool FDTCctvSession::OpenInput()
 	VideoStreamIndex = av_find_best_stream(FormatContext, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
 	if (VideoStreamIndex < 0)
 	{
-		UE_LOG(LogDTCctv, Warning, TEXT("%s: 비디오 스트림이 없습니다."), *SafeUrl);
+		DTCctvLogEvent(Params.LogContext, FString::Printf(TEXT("%s: 비디오 스트림이 없습니다."), *SafeUrl), ELogVerbosity::Warning);
 		return false;
 	}
 
@@ -749,8 +750,9 @@ bool FDTCctvSession::OpenDecoder()
 	DecoderReason = Params.DecodeMode == EDTCctvDecodeMode::SoftwareOnly ? TEXT("사용자 소프트웨어 지정") : TEXT("이전 HW 장애로 소프트웨어 유지");
 	if (Codec == nullptr)
 	{
-		UE_LOG(LogDTCctv, Warning, TEXT("%s: 지원하지 않는 코덱입니다: %s"),
-			*DTCctvMaskUrlCredentials(Params.Url), UTF8_TO_TCHAR(avcodec_get_name(Stream->codecpar->codec_id)));
+		SetError(TEXT("디코더 선택"), AVERROR_DECODER_NOT_FOUND);
+		DTCctvLogEvent(Params.LogContext, FString::Printf(TEXT("%s: 지원하지 않는 코덱입니다: %s"),
+			*DTCctvMaskUrlCredentials(Params.Url), UTF8_TO_TCHAR(avcodec_get_name(Stream->codecpar->codec_id))), ELogVerbosity::Warning);
 		return false;
 	}
 
@@ -793,11 +795,11 @@ void FDTCctvSession::ReadLoop()
 		{
 			if (FirstKeyPacketSeconds == 0.0 && LastFrame == 0.0)
 			{
-				UE_LOG(LogDTCctv, Warning, TEXT("%s: 30초 안에 키프레임을 받지 못해 디코딩 방식을 유지하고 다시 연결합니다."), *SafeUrl);
+				DTCctvLogEvent(Params.LogContext, FString::Printf(TEXT("%s: 30초 안에 키프레임을 받지 못해 디코딩 방식을 유지하고 다시 연결합니다."), *SafeUrl), ELogVerbosity::Warning);
 			}
 			else
 			{
-				UE_LOG(LogDTCctv, Warning, TEXT("%s: 키프레임 수신 후 디코딩 출력 감시 기한을 넘어 다시 연결합니다."), *SafeUrl);
+				DTCctvLogEvent(Params.LogContext, FString::Printf(TEXT("%s: 키프레임 수신 후 디코딩 출력 감시 기한을 넘어 다시 연결합니다."), *SafeUrl), ELogVerbosity::Warning);
 			}
 			if (WatchdogAction == EDTCctvOutputWatchdogAction::RetrySoftware)
 			{
@@ -835,7 +837,7 @@ void FDTCctvSession::ReadLoop()
 
 		if (bHwFailed.load() && FirstKeyPacketSeconds > 0.0)
 		{
-			UE_LOG(LogDTCctv, Warning, TEXT("%s: 하드웨어 디코딩 오류로 다시 연결합니다. 키프레임 수신=%d"), *SafeUrl, FirstKeyPacketSeconds > 0.0 ? 1 : 0);
+			DTCctvLogEvent(Params.LogContext, FString::Printf(TEXT("%s: 하드웨어 디코딩 오류로 다시 연결합니다. 키프레임 수신=%d"), *SafeUrl, FirstKeyPacketSeconds > 0.0 ? 1 : 0), ELogVerbosity::Warning);
 			bForceSoftware = true;
 			break;
 		}
@@ -843,7 +845,7 @@ void FDTCctvSession::ReadLoop()
 		// 하드웨어 디코딩이 입력을 못 따라가면 이 채널은 소프트웨어로 옮긴다.
 		if (HwPixelFormat >= 0 && !bSoftwareFormatFallback.load() && Queue.GetDroppedPackets() > DroppedAtStart)
 		{
-			UE_LOG(LogDTCctv, Warning, TEXT("%s: 하드웨어 디코딩 과부하로 다시 연결합니다. 키프레임 수신=%d"), *SafeUrl, FirstKeyPacketSeconds > 0.0 ? 1 : 0);
+			DTCctvLogEvent(Params.LogContext, FString::Printf(TEXT("%s: 하드웨어 디코딩 과부하로 다시 연결합니다. 키프레임 수신=%d"), *SafeUrl, FirstKeyPacketSeconds > 0.0 ? 1 : 0), ELogVerbosity::Warning);
 			if (FirstKeyPacketSeconds > 0.0)
 			{
 				bForceSoftware = true;
@@ -887,6 +889,7 @@ void FDTCctvSession::CloseConnection()
 
 void FDTCctvSession::DecoderMain()
 {
+	const FDTCctvLogScope LogScope(Params.LogContext);
 	AVFrame* Decoded = av_frame_alloc();
 	AVPacket* Packet = nullptr;
 	bool bDiscontinuity = false;

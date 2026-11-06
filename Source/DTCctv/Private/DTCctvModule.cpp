@@ -53,7 +53,7 @@ namespace
 		av_log_format_line2(Avcl, Level, Format, Args, Line, sizeof(Line), &PrintPrefix);
 		FString Message = DTCctvMaskUrlCredentials(UTF8_TO_TCHAR(Line));
 		Message.TrimEndInline();
-		UE_LOG(LogDTCctv, Log, TEXT("FFmpeg: %s"), *Message);
+		DTCctvLogEvent(DTCctvCurrentLogContext(), TEXT("FFmpeg: ") + Message);
 	}
 }
 
@@ -63,6 +63,7 @@ public:
 	virtual void StartupModule() override
 	{
 		// SDP만 메모리에서 수집하며, 나머지 상세 로그는 콜백에서 버린다.
+		DTCctvInitializeLogSink();
 		av_log_set_level(AV_LOG_VERBOSE);
 		av_log_set_callback(&FFmpegLogCallback);
 		avformat_network_init();
@@ -73,6 +74,7 @@ public:
 	{
 		FDTCctvSession::ShutdownRetired();
 		DTCctvHwDevice::ReleaseAll();
+		DTCctvShutdownLogSink();
 		avformat_network_deinit();
 		av_log_set_callback(&av_log_default_callback);
 	}

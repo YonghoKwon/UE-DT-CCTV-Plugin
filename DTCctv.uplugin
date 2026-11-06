@@ -7,6 +7,9 @@
 	"Category": "Digital Twin",
 	"CanContainContent": false,
 	"Installed": false,
+	"Plugins": [
+		{ "Name": "DTCore", "Enabled": true, "Optional": true }
+	],
 	"Modules": [
 		{ "Name": "DTCctvRender", "Type": "Runtime", "LoadingPhase": "PostConfigInit", "PlatformAllowList": [ "Win64", "Linux" ] },
 		{ "Name": "DTCctv", "Type": "Runtime", "LoadingPhase": "Default", "PlatformAllowList": [ "Win64", "Linux" ] }
