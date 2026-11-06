@@ -5,7 +5,8 @@
     [ValidateSet('h264','hevc')][string]$Codec='h264',
     [ValidateSet('tcp','udp')][string]$Transport='tcp',
     [ValidateSet('N0','N1','N2','N3','N4','N5','N6','N7')][string]$Condition='N1',
-    [switch]$PrepareOnly
+    [switch]$PrepareOnly,
+    [ValidateRange(1,3)][int]$OutageCount=1
 )
 $ErrorActionPreference='Stop'
 if($PrepareOnly -and $Condition -ne 'N0'){throw '짧은 준비 점검은 무장애 N0에만 사용할 수 있습니다.'}
@@ -34,6 +35,10 @@ $owned=[Collections.Generic.List[object]]::new()
 $container=$null;$initialized=$false;$reader=$null;$n6=$null
 $seconds=if($PrepareOnly){25}else{185}
 $result=[ordered]@{status='FAIL';tag=$Tag;platform=$Platform;codec=$Codec;transport=$Transport;condition=$Condition;started_at=(Get-Date -Format o);source_cpp=$state.source_cpp;game_seconds=$seconds;impairment_seconds_requested=132;evaluation_seconds_requested=120;channels=16;original_fps=30;prepare_only=[bool]$PrepareOnly;note=''}
+$result['diagnostic_outage_count']=$OutageCount
+$serverConfig=Join-Path $ReportRoot 'mediamtx-test.yml'
+if(-not(Test-Path -LiteralPath $serverConfig)){throw '시험 전용 mediamtx 절대경로 설정이 없습니다.'}
+$result['source_server_config']=@{path=$serverConfig;sha256=(Get-FileHash -LiteralPath $serverConfig -Algorithm SHA256).Hash}
 if($PrepareOnly){$result.impairment_seconds_requested=0;$result.evaluation_seconds_requested=0}
 $result['script_hashes']=@{}
 foreach($name in @('DTCctvTestCommon.ps1','netem_runtime.js','netem_control.sh','network_fault_case.ps1','prepare_netem_owner.py')){$result.script_hashes[$name]=(Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $name) -Algorithm SHA256).Hash}
@@ -108,7 +113,7 @@ try
     {
         [Environment]::SetEnvironmentVariable('MTX_LOGLEVEL','info','Process')
         [Environment]::SetEnvironmentVariable('MTX_LOGDESTINATIONS','stdout','Process')
-        $server=Start-DTCctvOwnedProcess -File (Join-Path $state.tools.mediamtx 'mediamtx.exe') -Arguments 'mediamtx.yml' -WorkingDirectory $state.tools.mediamtx -LogPrefix "$case\source.server" -Owned $owned
+        $server=Start-DTCctvOwnedProcess -File (Join-Path $state.tools.mediamtx 'mediamtx.exe') -Arguments ('"'+$serverConfig+'"') -WorkingDirectory $state.tools.mediamtx -LogPrefix "$case\source.server" -Owned $owned
     }
     finally
     {
@@ -132,6 +137,8 @@ try
     $docker=(Get-Command docker).Source
     if($Platform -eq 'linux')
     {
+        $packageSaved=Join-Path $state.packages 'Linux\DTCctvTestHost\Saved'
+        New-Item -ItemType Directory -Force -Path $packageSaved | Out-Null
         $url='rtsp://host.docker.internal:8554/cam'
         if($Transport -eq 'udp')
         {
@@ -156,11 +163,12 @@ try
         $deadline=[datetime]::UtcNow.AddSeconds(10)
         while(-not(Select-String -LiteralPath "$case\relay.stdout.log" -SimpleMatch TCP_RELAY_READY -Quiet -ErrorAction SilentlyContinue)){if([datetime]::UtcNow -gt $deadline){throw 'TCP 중계 준비 실패'};Start-Sleep -Milliseconds 100}
         $argsLine='-windowed -ForceRes -ResX=1920 -ResY=1080 -unattended -nosplash -nosound -CctvUrl=rtsp://127.0.0.1:18554/cam -CctvCount=16 -CctvSeconds=185 -CctvCsv="'+$case+'\samples.csv" -CctvShot="'+$case+'\final.png" -ExecCmds="r.VSync 0,t.MaxFPS 60" -abslog="'+$case+'\game.log"'
-        if($Condition -eq 'N6'){$argsLine+=' -CctvShotEvery=1'}
+        if($Condition -eq 'N6'){$argsLine+=' -CctvShotEvery=1'}else{$argsLine+=' -CctvShotEvery=30'}
         $exe=Join-Path $state.packages 'Windows\DTCctvTestHost\Binaries\Win64\DTCctvTestHost.exe'
         $reader=Start-DTCctvOwnedProcess -File $exe -Arguments $argsLine -WorkingDirectory (Split-Path $exe) -LogPrefix "$case\game" -Owned $owned
     }
     $phaseStart=$null;$cleared=$false;$outageStarted=$false;$wireFirst=$null;$wireAt=$null;$wireLast=$null
+    $outageNumber=0;$outageLogged=$false
     $nextResource=[datetime]::UtcNow;$deadline=[datetime]::UtcNow.AddSeconds(300)
     & docker exec $netId nstat -asz *> "$case\nstat-before.log"
     while(-not $reader.Process.HasExited)
@@ -193,14 +201,17 @@ try
                 $result['aggregate_baseline_bps']=$aggregate
                 $result['phase_start_t']=$phaseStart
             }
-            if($null -ne $phaseStart -and $Condition -eq 'N6' -and -not $outageStarted -and $t -ge $phaseStart+60)
+            $nextOutage=if($OutageCount -eq 1){60}else{30+40*$outageNumber}
+            if($null -ne $phaseStart -and $Condition -eq 'N6' -and $outageNumber -lt $OutageCount -and $t -ge $phaseStart+$nextOutage -and (-not $n6 -or $n6.Process.HasExited))
             {
                 Save-Event outage-before $clock
+                Save-Event "outage-$($outageNumber+1)-before" $clock
                 $argsLine="exec -e DTCCTV_NETEM_OWNED=1 -e DTCCTV_INTERFACE=eth0 $netId /bin/sh /control.sh apply N6"
-                $n6=Start-DTCctvOwnedProcess -File $docker -Arguments $argsLine -WorkingDirectory $repo -LogPrefix "$case\outage" -Owned $owned
+                $n6=Start-DTCctvOwnedProcess -File $docker -Arguments $argsLine -WorkingDirectory $repo -LogPrefix "$case\outage-$($outageNumber+1)" -Owned $owned
                 $outageStarted=$true
+                $outageNumber++;$outageLogged=$false
             }
-            if($n6 -and $n6.Process.HasExited -and -not $result.Contains('outage_exit')){$result['outage_exit']=$n6.Process.ExitCode;Save-Event outage-restored-observed $clock}
+            if($n6 -and $n6.Process.HasExited -and -not $outageLogged){$result['outage_exit']=$n6.Process.ExitCode;Save-Event outage-restored-observed $clock;Save-Event "outage-$outageNumber-restored" $clock;$outageLogged=$true}
             if($null -ne $phaseStart -and -not $cleared -and $t -ge $phaseStart+132)
             {
                 Control status

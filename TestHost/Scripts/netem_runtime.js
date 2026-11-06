@@ -86,7 +86,7 @@ function relay(port, upstream, upstreamPort) {
   process.on('SIGTERM',stop);process.on('SIGINT',stop);
 }
 function udpRelay(port, upstream, upstreamPort, base, pairs) {
-  const sessions=new Set();const used=new Set();
+  const sessions=new Set();const used=new Set();const retired=new Map();
   const ownerFile='/tmp/dtcctv-udp-relay-owner.json';
   fs.writeFileSync(ownerFile,JSON.stringify({pid:process.pid,start_ticks:stat(process.pid).start_ticks,command:process.argv}));
   function framed(socket,callback) {
@@ -107,7 +107,7 @@ function udpRelay(port, upstream, upstreamPort, base, pairs) {
   async function allocate(ctx,clientPorts) {
     const forbidden=new Set(clientPorts);
     for(const x of sessions)if(x.route)for(const p of x.route.clientPorts)forbidden.add(p);
-    const index=Array.from({length:pairs},(_,i)=>i).find(i=>!used.has(i) && !forbidden.has(base+2*i) && !forbidden.has(base+2*i+1));
+    const index=Array.from({length:pairs},(_,i)=>i).find(i=>!used.has(i) && (retired.get(i)||0)<=Date.now() && !forbidden.has(base+2*i) && !forbidden.has(base+2*i+1));
     if(index===undefined)throw Error('UDP 중계 포트 풀 부족');
     used.add(index);const ports=[base+2*index,base+2*index+1];const sockets=[];
     const route={ports,clientPorts,serverPorts:null,sockets,received:[0,0],feedback:[0,0]};ctx.route=route;
@@ -124,6 +124,8 @@ function udpRelay(port, upstream, upstreamPort, base, pairs) {
       socket.bind(p,'0.0.0.0',()=>resolve());
     })));
     route.close=()=>{
+      // UDP의 이전 서버 세션이 남은 동안 새 연결에 같은 공개 포트를 주지 않는다.
+      retired.set(index,Date.now()+65000);
       let left=sockets.length;
       for(const socket of sockets){try{socket.close(()=>{if(--left===0)used.delete(index);});}catch{if(--left===0)used.delete(index);}}
     };

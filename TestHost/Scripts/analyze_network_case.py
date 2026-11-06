@@ -1,6 +1,6 @@
 """장애 적용 구간과 원시 채널 CSV를 대조한다. 미측정 항목은 수치로 만들지 않는다."""
 from pathlib import Path
-import argparse,csv,datetime as dt,json,re,statistics,subprocess,sys
+import argparse,csv,datetime as dt,json,re,statistics,subprocess,sys,time
 
 def read(path):return json.loads(path.read_text(encoding='utf-8-sig'))
 def rows(path):
@@ -88,7 +88,11 @@ def analyze(case):
     if ex['platform']=='linux':out['unverified'].append('NullRHI: 화면/렌더 정상 여부는 ENV_BLOCKED. 디코딩 실측과 구분.')
     elif not (case/'visual-review.json').exists():out['unverified'].append('Windows PNG 직접 검수 대기')
     else:
-        if read(case/'visual-review.json')['status']!='PASS':out['failures'].append('PNG 직접 검수 실패')
+        review=read(case/'visual-review.json')
+        if review['status']!='PASS':out['failures'].append('PNG 직접 검수 실패')
+        if review.get('during_condition_status') not in ('PASS','FAIL'):out['unverified'].append('장애 구간의 PNG 직접 검수 미완료')
+        if ex['condition']=='N6' and review.get('last_frame_hold')=='PASS':
+            out['unverified']=[x for x in out['unverified'] if x!='단절 중 마지막 화면 유지의 직접 검수 필요']
     metrics['adjusted_network_inclusive_latency_ms']=None
     clocks=lines(case/'game-clock.jsonl');anchor=next(x for x in clocks if x['t']>=10);origin=stamp(anchor['file_utc'])-anchor['t']
     resources=lines(case/'resources.jsonl') if ex['platform']=='linux' else rows(case/'resources.csv')
@@ -116,7 +120,9 @@ if __name__=='__main__':
     except Exception as e:value=dict(status='FAIL',metrics=None,failures=['분석 실행 오류: '+str(e)],unverified=[])
     (args.case/'analysis.json').write_text(json.dumps(value,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     root=args.case.parents[1];checkpoint=root.parent/'checkpoint.json';state=read(checkpoint)
-    state['retest']['gates'][args.case.name]=value;state['active_measurement']={};state['updated_at']=dt.datetime.now().astimezone().isoformat()
+    state['retest']['gates'][args.case.name]=value
+    if state.get('active_measurement',{}).get('tag')==args.case.name:state['active_measurement']={}
+    state['updated_at']=dt.datetime.now().astimezone().isoformat()
     checkpoint.write_text(json.dumps(state,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     summary={k:value.get(k) for k in ['status','failures','unverified']};m=value.get('metrics')
     if m:summary.update({k:m.get(k) for k in ['seconds','decode_fps','min_channel_decode_fps','reconnects','dropped','decode_errors','resources','recovery_upper_seconds']})
@@ -124,3 +130,7 @@ if __name__=='__main__':
     print(json.dumps(summary,ensure_ascii=False))
     writer=Path(__file__).with_name('write_network_result.py')
     if writer.exists():subprocess.run([sys.executable,str(writer),str(root)],check=True)
+    pause=root/'pause-between.signal'
+    if pause.exists():
+        with (root.parent/'progress.md').open('a',encoding='utf-8') as f:f.write(f"{dt.datetime.now().astimezone().isoformat()} | 조건 사이 자료 검증 | RUNNING | GPU·송출 종료 뒤 참조 자료 검증 대기.\n")
+        while pause.exists():time.sleep(.5)
