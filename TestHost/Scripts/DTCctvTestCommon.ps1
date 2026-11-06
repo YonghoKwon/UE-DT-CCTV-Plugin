@@ -65,7 +65,7 @@ function Start-DTCctvOwnedProcess
 		FilePath = $resolved; ArgumentList = $Arguments; WorkingDirectory = $WorkingDirectory
 		RedirectStandardOutput = "$LogPrefix.stdout.log"; RedirectStandardError = "$LogPrefix.stderr.log"; PassThru = $true
 	}
-	if ([IO.Path]::GetFileNameWithoutExtension($resolved) -in @('mediamtx', 'ffmpeg', 'python', 'python3', 'pythonw', 'docker', 'UnrealEditor-Cmd'))
+	if ([IO.Path]::GetFileNameWithoutExtension($resolved) -in @('mediamtx', 'ffmpeg', 'python', 'python3', 'pythonw', 'docker', 'UnrealEditor-Cmd', 'nvidia-smi'))
 	{
 		$launch['WindowStyle'] = 'Hidden'
 	}
