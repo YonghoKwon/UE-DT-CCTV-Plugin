@@ -20,7 +20,7 @@ Windows 열은 decode/display fps이며, Linux 열은 decode fps입니다. Linux
 | C8 MJPEG 1080p30 4:2:2 | FAIL 29.724/29.793, p95 73ms | FAIL 27.756 / 최저 22.136 | FAIL 27.119 / software16 |
 | C9 H265 4K 메인/H264 640 서브 | PASS 30.032/30.028, p95 43ms | PASS 30.060 / 최저 29.997 | PASS 30.011 / cuda4,software12 |
 
-C1~C7·C9의 정상 협상 기본 자료는 F 최종 C++ `95cd411`입니다. 실패한 형식 협상을 수정한 `9c98d85`에서는 영향을 받는 MJPEG를 새 패키지로 재측정하고, 지연 4조건·정지·패키지·장애·소크를 별도로 회귀했습니다. 각 수치의 코드 버전과 원자료는 `Saved/Reports/CCTV-01G/codec-matrix.json`에 있습니다. 이전 자료를 새 코드의 새 측정으로 표시하지 않습니다.
+최종 행렬에서 C1~C6, C7 Windows·Linux SW16, C9의 기본 행은 F 최종 C++ `95cd411`입니다. C7 Linux Auto의 선택 자료와 C8 수정 후 행은 `9c98d85`입니다. 실패한 형식 협상을 수정한 `9c98d85`에서는 영향을 받는 MJPEG를 새 패키지로 재측정하고, 지연 4조건·정지·패키지·장애·소크를 별도로 회귀했습니다. 각 수치의 코드 버전과 원자료는 `Saved/Reports/CCTV-01G/codec-matrix.json`에 있습니다. 이전 자료를 새 코드의 새 측정으로 표시하지 않습니다.
 
 C7 Linux SW16 기본 설정의 최저 채널 27.829fps는 FAIL로 보존했습니다. 실제 틱 60·`SoftwareDecodeThreads=1` 대조에서는 채널별 97%까지 통과했습니다. 같은 스레드 1 설정의 CUDA 혼합은 미달이어서 전체 기본값을 바꾸지 않았습니다. CUDA4/SW12는 스레드 2 대조가 통과했습니다.
 
