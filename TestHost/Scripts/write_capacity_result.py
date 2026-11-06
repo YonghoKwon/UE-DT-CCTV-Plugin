@@ -62,7 +62,8 @@ def build(final=False):
             '로컬 파일 반복 송출·단일 PC·고정 창 크기/자동 격자 기준. 채널 증가 시 타일 크기도 줄어 변환·업로드 비용이 달라짐.',
             '짧은 채널 한계 측정은 60분 소크·실제 카메라·실제 Pixel Streaming 동시 인코딩의 증거를 대체하지 않음. 이번 사용자 요청에 따라 최종 코덱 회귀로 수행.']
     result={'task_id':'CCTV-01L','status':status,'phase':'COMPLETE' if final else 'IN_PROGRESS','updated_at':dt.datetime.now().astimezone().isoformat(),'base_commit':c['base_commit'],'source_cpp':c['source_cpp'],'head_commit':head,'hardware':c['hardware'],'gates':c['gates'],'boundaries':boundaries,'measurements':results,'known_limits':limits,'decisions_needed':[],
-            'product_cpp_changed':False,'defaults_changed':False,'timer_option':False,'windows_mode':'offscreen','regression_scope':'사용자 요청의 최종 코덱별 채널 수 회귀. 별도 소크·UI 회귀를 이번 자료로 대체하지 않음.'}
+            'product_cpp_changed':False,'defaults_changed':False,'timer_option':False,'windows_mode':'offscreen','regression_scope':'사용자 요청의 최종 코덱별 채널 수 회귀. 별도 소크·UI 회귀를 이번 자료로 대체하지 않음.',
+            'continuation':{'approved':c.get('continuation_approved',False),'started_at':c.get('continuation_started_at'),'base_commit':c.get('continuation_base_commit'),'deadline_enabled':c.get('deadline_enabled',True),'rebuilt':False,'preserved_report':'continuation-20261107/' if c.get('continuation_approved') else None}}
     write(P/'result.json',result)
     lines=['# CCTV-01L 최종 코덱별 채널 수 시험','',f'현재 판정 **{status}**. 최신 코드와 타이머 옵션을 포함한 새 빌드·새 패키지를 사용했습니다. 타이머 옵션은 기본 꺼짐입니다.','',
            f'C++ `{c["source_cpp"]}`, 시험 시작 HEAD `{c["base_commit"]}`, 보고 HEAD `{head}`. 제품 C++와 TestHost C++ 변경 없음.','',
@@ -94,6 +95,7 @@ def build(final=False):
                 extreme(lambda a:a.get('memory',{}).get('rss_mib_peak'))]
         lines.append('|'+b['codec']+' '+b['mode']+'|'+str(n)+'|'+'|'.join(values)+'|')
     lines+=['','## 새 빌드와 준비 이력','',
+            '최초 회차의 같은 패키지를 후속에서도 사용했습니다. 사용자 승인 후속에서는225개 해시로 동일성을 확인하고 빌드·단위·패키징을 반복하지 않았으며 확정된 경로는 재측정하지 않았습니다. 최초 시간 예산 종료 결과는 continuation-20261107/에 보존했습니다.' if c.get('continuation_approved') else '',
             'Editor·Win64·Linux는 기존 해당 빌드 산출물을 정리한 뒤 다시 컴파일했습니다. 전체 단위26개(타이머 옵션 신규3개 포함)는 실패0·미수행0으로 통과했고, 양 플랫폼 UAT BuildCookRun·새 패키징도 종료0입니다. `package-provenance.json`에 새 바이너리 SHA256·시각·크기를 기록했습니다.',
             'G에 기록된 ffprobe.exe가 현재 캐시에 없어 최초 스트림 준비가 중단됐습니다. H60 생성 파일과 실패 이력을 보존하고, 새 다운로드 없이 기존 FFmpeg 입력 메타데이터와 showinfo로7종 코덱·해상도·FPS·픽셀 형식·GOP·C1 B프레임을 검증했습니다. 원로그·파일SHA256은 `probes/`와 `source-catalog.json`에 있습니다. 실제 측정에서는 미리 인코딩한 파일을 복사 송출하며 GPU 인코딩 부하를 추가하지 않습니다.','',
             '## 근거와 미수행','',
