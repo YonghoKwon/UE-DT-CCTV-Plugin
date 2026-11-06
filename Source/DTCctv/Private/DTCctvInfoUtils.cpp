@@ -2,6 +2,45 @@
 
 #include "DTCctvPolicies.h"
 
+FString DTCctvDescribeError(int32 Error, bool bDeadlineExpired)
+{
+	if (Error == AVERROR(ETIMEDOUT) || (Error == AVERROR_EXIT && bDeadlineExpired))
+	{
+		return TEXT("연결 또는 수신 시간 초과. 주소·포트와 네트워크를 확인하세요.");
+	}
+	switch (Error)
+	{
+	case AVERROR_HTTP_UNAUTHORIZED:
+		return TEXT("인증 실패(401)");
+	case AVERROR_HTTP_FORBIDDEN:
+		return TEXT("접근 거부(403)");
+	case AVERROR_HTTP_NOT_FOUND:
+		return TEXT("스트림 경로 없음(404)");
+	case AVERROR_HTTP_BAD_REQUEST:
+		return TEXT("서버가 요청을 거부했습니다(400). RTSP 주소와 스트림 경로를 확인하세요.");
+	case AVERROR_HTTP_OTHER_4XX:
+		return TEXT("서버가 RTSP 요청을 거부했습니다(4xx). 주소·계정과 스트림 경로를 확인하세요.");
+	case AVERROR_HTTP_SERVER_ERROR:
+		return TEXT("RTSP 서버 내부 오류(5xx)");
+	case AVERROR(ECONNREFUSED):
+		return TEXT("포트 연결 거부");
+	case AVERROR_DECODER_NOT_FOUND:
+		return TEXT("코덱 미지원");
+	case AVERROR_STREAM_NOT_FOUND:
+		return TEXT("비디오 스트림을 찾지 못했습니다.");
+	case AVERROR_PROTOCOL_NOT_FOUND:
+		return TEXT("지원하지 않는 전송 방식입니다.");
+	case AVERROR_INVALIDDATA:
+		return TEXT("지원하지 않거나 손상된 스트림 데이터입니다.");
+	case AVERROR_EOF:
+		return TEXT("송출 연결이 종료됐습니다.");
+	case AVERROR_EXIT:
+		return TEXT("입출력 요청이 중단됐습니다.");
+	default:
+		return FString::Printf(TEXT("스트림 처리 오류(코드 %d). 서버와 디코더 로그를 확인하세요."), Error);
+	}
+}
+
 FString DTCctvProfileName(AVCodecID Codec, int32 Profile)
 {
 	const char* Name = avcodec_profile_name(Codec, Profile);

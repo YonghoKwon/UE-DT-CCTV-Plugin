@@ -65,4 +65,16 @@ bool FDTCctvInfoSdpTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDTCctvErrorDescriptionTest, "DTCctv.Info.ErrorDescription", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::SmokeFilter)
+bool FDTCctvErrorDescriptionTest::RunTest(const FString& Parameters)
+{
+	TestTrue(TEXT("입출력 제한 시간 중단의 실제 원인"), DTCctvDescribeError(AVERROR_EXIT, true).Contains(TEXT("시간 초과")));
+	TestFalse(TEXT("명시 중단을 시간 초과로 오인하지 않음"), DTCctvDescribeError(AVERROR_EXIT, false).Contains(TEXT("시간 초과")));
+	TestTrue(TEXT("잘못된 요청400과 경로 점검 안내"), DTCctvDescribeError(AVERROR_HTTP_BAD_REQUEST, false).Contains(TEXT("경로")));
+	TestTrue(TEXT("인증401 유지"), DTCctvDescribeError(AVERROR_HTTP_UNAUTHORIZED, false).Contains(TEXT("인증 실패(401)")));
+	TestTrue(TEXT("404 상태 유지"), DTCctvDescribeError(AVERROR_HTTP_NOT_FOUND, false).Contains(TEXT("404")));
+	TestTrue(TEXT("알 수 없는 오류도 한국어·코드 제공"), DTCctvDescribeError(-123456, false).Contains(TEXT("처리 오류(코드 -123456)")));
+	return true;
+}
+
 #endif

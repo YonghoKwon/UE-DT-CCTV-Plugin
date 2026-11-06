@@ -30,13 +30,6 @@ namespace
 		return FPlatformTime::Seconds();
 	}
 
-	FString AvErrorString(int32 Error)
-	{
-		char Buffer[AV_ERROR_MAX_STRING_SIZE] = { 0 };
-		av_strerror(Error, Buffer, sizeof(Buffer));
-		return UTF8_TO_TCHAR(Buffer);
-	}
-
 	/** 동시 연결 시도 수를 제한해, 일제히 복구할 때 서버에 부하가 몰리지 않게 한다. */
 	class FConnectGate
 	{
@@ -434,13 +427,11 @@ void FDTCctvSession::ObserveFrameInfo(AVFrame* Frame, AVFrame* Transferred)
 
 void FDTCctvSession::SetError(const FString& Stage, int32 Error)
 {
-	FString Detail = AvErrorString(Error);
-	if (Error == AVERROR_HTTP_UNAUTHORIZED) { Detail = TEXT("인증 실패(401)"); }
-	else if (Error == AVERROR_HTTP_FORBIDDEN) { Detail = TEXT("접근 거부(403)"); }
-	else if (Error == AVERROR_HTTP_NOT_FOUND) { Detail = TEXT("스트림 경로 없음(404)"); }
-	else if (Error == AVERROR(ETIMEDOUT)) { Detail = TEXT("연결 또는 수신 시간 초과"); }
-	else if (Error == AVERROR(ECONNREFUSED)) { Detail = TEXT("포트 연결 거부"); }
-	else if (Error == AVERROR_DECODER_NOT_FOUND) { Detail = TEXT("코덱 미지원"); }
+	if (bStop.load())
+	{
+		return;
+	}
+	const FString Detail = DTCctvDescribeError(Error, NowSeconds() > Deadline.load());
 	const FString Message = DTCctvMaskUrlCredentials(Stage + TEXT(": ") + Detail);
 	{
 		FScopeLock ScopeLock(&Lock);

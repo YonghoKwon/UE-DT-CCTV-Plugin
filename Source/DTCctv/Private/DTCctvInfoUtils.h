@@ -6,6 +6,7 @@
 
 FString DTCctvProfileName(AVCodecID Codec, int32 Profile);
 FString DTCctvLevelName(AVCodecID Codec, int32 Level);
+FString DTCctvDescribeError(int32 Error, bool bDeadlineExpired);
 void DTCctvDescribePixelFormat(AVPixelFormat Format, FDTCctvStreamInfo& Info);
 void DTCctvParseSdpInfo(const FString& Sdp, FDTCctvStreamInfo& Info);
 TMap<FString, FString> DTCctvInfoFields(const FDTCctvStreamInfo& Info);
