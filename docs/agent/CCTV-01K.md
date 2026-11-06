@@ -9,6 +9,17 @@
 - Windows 패키지 측정이 가능한 구성(예: 장애를 건 중계 컨테이너를 거쳐 Windows가 수신)이 있으면 함께 시험한다. 없으면 Linux 디코딩 범위만 판정한다.
 - 각 조건에서 RTSP over TCP(기본)와 UDP를 모두 시험한다. 플러그인이 UDP를 지원하지 않으면 그 사실을 적는다.
 
+## 재실행: tc 패키지 다운로드 승인 (2026-11-06 사용자 결정)
+
+1차 실행은 로컬 이미지 36개에 사용 가능한 `tc`가 없어 28개 조합 모두 ENV_BLOCKED였다. 사용자가 **`tc` 패키지 다운로드를 승인**했다. 승인 범위는 다음과 같다.
+
+- 대상: Rocky Linux 8 공식 저장소(`https://download.rockylinux.org/pub/rocky/8/BaseOS/x86_64/os/Packages/`)의 `iproute-tc`와 그 실행에 필요한 최소 의존 RPM(`iproute`, `libmnl`, `libbpf`, `elfutils-libelf` 등 실제 필요분). 전체 합계 50MB 이내.
+- 방법: RPM 파일을 `C:\Users\ho270\AppData\Local\Temp\cctv\dl\rpm-tc\`에 내려받아 URL, 크기, SHA256을 기록하고, 서명 또는 체크섬을 확인한다. 기존 이미지는 바꾸지 않는다. 시험 컨테이너를 만들 때 RPM을 읽기 전용으로 마운트해 컨테이너 안에서만 `rpm -i`로 설치한다. 새 이미지를 만들거나 기존 이미지를 덮어쓰지 않는다.
+- 컨테이너에는 `NET_ADMIN`만 추가한다. `--privileged`와 호스트 네트워크 모드는 쓰지 않는다. 호스트 PC와 WSL의 네트워크 설정은 바꾸지 않는다.
+- Docker Desktop 커널에 `sch_netem`이 없어 `tc qdisc add ... netem`이 실패하면, 다른 다운로드로 우회하지 말고 근거를 남긴 뒤 ENV_BLOCKED로 끝낸다.
+- 1차 실행에서 만든 제어기와 준비 검사(`b70ac92`, `ed1791c`)를 재사용하고, 1차 결과는 보존한다.
+- 내려받은 RPM은 시험이 끝나도 최종 정리(CCTV-01Z) 전까지 남겨 둔다.
+
 ## 시험 조건
 
 16채널 H.264 1080p30과 H.265 1080p30으로 각각 측정한다. 조건마다 120초 이상, 시작 10초는 제외한다.
