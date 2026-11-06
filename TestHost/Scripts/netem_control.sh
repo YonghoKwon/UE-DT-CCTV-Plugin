@@ -14,7 +14,14 @@ case "$limit" in ''|*[!0-9]*) exit 2;; esac
 [ "$limit" -gt 0 ] || exit 2
 state=/tmp/dtcctv-netem-owned
 case "$interface" in ''|*[!a-zA-Z0-9_.:-]*) exit 2;; esac
-command -v tc >/dev/null 2>&1 || { printf '%s\n' 'tc가 없습니다.' >&2; exit 20; }
+if ! command -v tc >/dev/null 2>&1; then
+  if [ -x /bin/busybox ] && /bin/busybox tc qdisc show >/dev/null 2>&1; then
+    tc() { /bin/busybox tc "$@"; }
+  else
+    printf '%s\n' 'tc가 없습니다.' >&2
+    exit 20
+  fi
+fi
 command -v ip >/dev/null 2>&1 || { printf '%s\n' 'ip가 없습니다.' >&2; exit 20; }
 
 case "$action" in
@@ -42,6 +49,7 @@ case "$action" in
       N5)
         aggregate=${3:-}
         case "$aggregate" in ''|*[!0-9]*) printf '%s\n' '실측한 전체 비트레이트(bps)가 필요합니다.' >&2; exit 2;; esac
+        [ "${#aggregate}" -le 15 ] || exit 2
         [ "$aggregate" -gt 0 ] || exit 2
         rate=$((aggregate * 4 / 5))
         [ "$rate" -gt 0 ] || exit 2
