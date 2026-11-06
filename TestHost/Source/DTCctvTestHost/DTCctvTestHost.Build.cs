@@ -8,5 +8,6 @@ public class DTCctvTestHost : ModuleRules
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "UMG", "Slate", "SlateCore", "DTCctv" });
 		PrivateDependencyModuleNames.Add("RHI");
 		PrivateDependencyModuleNames.Add("RenderCore");
+		PrivateDependencyModuleNames.AddRange(new string[] { "Json", "JsonUtilities" });
 	}
 }

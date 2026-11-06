@@ -108,10 +108,23 @@ int32 DTCctvChooseStaleFrameSkip(TConstArrayView<double> FrameAgesSeconds, doubl
 	return Skip;
 }
 
-FString DTCctvMaskUrlCredentials(const FString& Text)
+FString DTCctvMaskUrlCredentials(const FString &Text)
 {
 	FString Result = Text;
 	int32 SearchFrom = 0;
+	const auto Hex = [](TCHAR Value) -> int32
+	{
+		if (Value >= '0' && Value <= '9')
+		{
+			return Value - '0';
+		}
+		Value = FChar::ToLower(Value);
+		return Value >= 'a' && Value <= 'f' ? Value - 'a' + 10 : -1;
+	};
+	static const TSet<FString> SecretKeys = {
+		TEXT("user"),		   TEXT("username"), TEXT("userid"), TEXT("login"),	  TEXT("password"),
+		TEXT("passwd"),		   TEXT("pass"),	 TEXT("pwd"),	 TEXT("token"),	  TEXT("access_token"),
+		TEXT("authorization"), TEXT("auth"),	 TEXT("apikey"), TEXT("api_key"), TEXT("signature")};
 	for (;;)
 	{
 		const int32 Scheme = Result.Find(TEXT("://"), ESearchCase::CaseSensitive, ESearchDir::FromStart, SearchFrom);
@@ -119,34 +132,60 @@ FString DTCctvMaskUrlCredentials(const FString& Text)
 		{
 			return Result;
 		}
-
-		const int32 HostStart = Scheme + 3;
-		int32 HostEnd = HostStart;
-		while (HostEnd < Result.Len() && Result[HostEnd] != TEXT('/') && !FChar::IsWhitespace(Result[HostEnd]))
+		const int32 Start = Scheme + 3;
+		int32 End = Start;
+		while (End < Result.Len() && !FChar::IsWhitespace(Result[End]))
 		{
-			++HostEnd;
+			++End;
 		}
-
-		// 비밀번호에 @가 있어도 가려지도록 마지막 @를 기준으로 한다.
-		int32 At = INDEX_NONE;
-		for (int32 Index = HostEnd - 1; Index >= HostStart; --Index)
+		FString Url = Result.Mid(Start, End - Start);
+		int32 AuthorityEnd = 0;
+		while (AuthorityEnd < Url.Len() && Url[AuthorityEnd] != '/' && Url[AuthorityEnd] != '?' &&
+			   Url[AuthorityEnd] != '#')
 		{
-			if (Result[Index] == TEXT('@'))
-			{
-				At = Index;
-				break;
-			}
+			++AuthorityEnd;
 		}
-
+		const int32 At = Url.Left(AuthorityEnd).Find(TEXT("@"), ESearchCase::CaseSensitive, ESearchDir::FromEnd);
 		if (At != INDEX_NONE)
 		{
-			Result = Result.Left(HostStart) + TEXT("***") + Result.Mid(At);
-			SearchFrom = HostStart + 3;
+			Url = TEXT("***") + Url.Mid(At);
 		}
-		else
+		const int32 Question = Url.Find(TEXT("?"));
+		if (Question != INDEX_NONE)
 		{
-			SearchFrom = HostEnd;
+			TArray<FString> Parts;
+			Url.Mid(Question + 1).ParseIntoArray(Parts, TEXT("&"), false);
+			for (FString &Part : Parts)
+			{
+				FString Key;
+				FString Value;
+				if (!Part.Split(TEXT("="), &Key, &Value))
+				{
+					continue;
+				}
+				FString Decoded;
+				for (int32 Index = 0; Index < Key.Len(); ++Index)
+				{
+					if (Key[Index] == '%' && Index + 2 < Key.Len() && Hex(Key[Index + 1]) >= 0 &&
+						Hex(Key[Index + 2]) >= 0)
+					{
+						Decoded.AppendChar(static_cast<TCHAR>(Hex(Key[Index + 1]) * 16 + Hex(Key[Index + 2])));
+						Index += 2;
+					}
+					else
+					{
+						Decoded.AppendChar(Key[Index]);
+					}
+				}
+				if (SecretKeys.Contains(Decoded.ToLower()))
+				{
+					Part = Key + TEXT("=***");
+				}
+			}
+			Url = Url.Left(Question + 1) + FString::Join(Parts, TEXT("&"));
 		}
+		Result = Result.Left(Start) + Url + Result.Mid(End);
+		SearchFrom = Start;
 	}
 }
 
