@@ -1,6 +1,6 @@
 """장애 적용 구간과 원시 채널 CSV를 대조한다. 미측정 항목은 수치로 만들지 않는다."""
 from pathlib import Path
-import argparse,csv,datetime as dt,json,re,statistics
+import argparse,csv,datetime as dt,json,re,statistics,subprocess,sys
 
 def read(path):return json.loads(path.read_text(encoding='utf-8-sig'))
 def rows(path):
@@ -43,6 +43,10 @@ def analyze(case):
         if len(reports)==1:
             report=read(reports[0]);intended_exit=native in (0,1,2) and report.get('tool')=='DTCctvCheck'
             metrics['native_check_verdict']=report.get('verdict')
+        child_exit=case/'resources.jsonl.exit.json'
+        if child_exit.exists():
+            metrics['native_child_exit']=read(child_exit)
+            if metrics['native_child_exit'].get('signal'):intended_exit=False
     crash=bool(re.search(r'Fatal error|Unhandled Exception|SIGSEGV|Assertion failed:',log)) or (native!=0 and not intended_exit)
     metrics['crash_observed']=crash
     if crash:out['failures'].append('크래시/비정상 종료')
@@ -63,6 +67,14 @@ def analyze(case):
         stable=bool(tail and int(tail[-1]['reconnects'])==int(tail[0]['reconnects']))
         post.append(dict(channel=n,playing_and_progressing=progressing,no_repeated_reconnect_after_clear=stable))
     metrics['post_clear_channels']=post
+    recovery=[]
+    for n,seq in channels.items():
+        baseline=max((x for x in seq if float(x['t'])<=clear),key=lambda x:float(x['t']))
+        recovered=next((float(x['t']) for x in seq if float(x['t'])>clear and int(x['state'])==2 and int(x['decoded'])>int(baseline['decoded'])),None)
+        recovery.append(None if recovered is None else recovered-clear)
+    metrics['post_clear_decode_activity_upper_seconds']=max(recovery) if all(x is not None for x in recovery) else None
+    metrics['post_clear_clean_image_recovery_seconds']=None
+    metrics['codec_warning_lines']=sum('LogDTCctv: FFmpeg:' in line and bool(re.search(r'error while decoding|concealing|Could not find ref|RTP: missed|corrupt',line,re.I)) for line in log.splitlines())
     if ex['condition'] in ('N4','N5') and not all(x['playing_and_progressing'] and x['no_repeated_reconnect_after_clear'] for x in post):out['failures'].append('장애 해제 후 재생/재연결 안정화 미달')
     if ex['condition']=='N6':
         earliest=event['outage-before']['t']+10;observed=event['outage-restored-observed']['t'];recovery=[]
@@ -95,6 +107,7 @@ def analyze(case):
         text=(case/f'nstat-{kind}.log').read_text(encoding='utf-16' if (case/f'nstat-{kind}.log').read_bytes().startswith(b'\xff\xfe') else 'utf-8-sig',errors='replace')
         nstat[kind]={m[0]:int(m[1]) for m in re.findall(r'^(Tcp\S+)\s+(\d+)\s',text,re.M)}
     metrics['tcp_retransmission_counters']={k:nstat['after'].get(k,0)-v for k,v in nstat['before'].items() if 'Retrans' in k}
+    metrics['tcp_reorder_and_sack_counters']={k:nstat['after'].get(k,0)-v for k,v in nstat['before'].items() if any(x in k for x in ['SACK','Reorder','OFO','DSACK'])}
     out['status']='FAIL' if out['failures'] else 'ENV_BLOCKED' if out['unverified'] else 'PASS'
     return out
 if __name__=='__main__':
@@ -109,3 +122,5 @@ if __name__=='__main__':
     if m:summary.update({k:m.get(k) for k in ['seconds','decode_fps','min_channel_decode_fps','reconnects','dropped','decode_errors','resources','recovery_upper_seconds']})
     with (root.parent/'progress.md').open('a',encoding='utf-8') as f:f.write(f"{state['updated_at']} | {args.case.name} | {value['status']} | {json.dumps(summary,ensure_ascii=False)}\n")
     print(json.dumps(summary,ensure_ascii=False))
+    writer=Path(__file__).with_name('write_network_result.py')
+    if writer.exists():subprocess.run([sys.executable,str(writer),str(root)],check=True)

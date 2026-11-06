@@ -47,8 +47,16 @@ function Test-DTCctvOwnedCimProcess
 	foreach ($entry in $OwnedProcesses)
 	{
 		if ($Candidate.ProcessId -ne $entry.Id -or $null -eq $entry.Started -or $null -eq $Candidate.CreationDate) { continue }
-		if ($Candidate.ExecutablePath -eq $entry.Path -and
-			[math]::Abs(($Candidate.CreationDate.ToUniversalTime() - $entry.Started).TotalMilliseconds) -le 1)
+		$createdMatches = [math]::Abs(($Candidate.CreationDate.ToUniversalTime() - $entry.Started).TotalMilliseconds) -le 1
+		if (-not $createdMatches) { continue }
+		$pathMatches = $Candidate.ExecutablePath -eq $entry.Path
+		# 종료 직후 WMI가 경로를 비우더라도 보관한 프로세스 핸들과 생성 식별자로 구분한다.
+		if (-not $pathMatches -and [string]::IsNullOrEmpty($Candidate.ExecutablePath) -and
+			$entry.Process.HasExited -and $Candidate.Name -eq [IO.Path]::GetFileName($entry.Path))
+		{
+			$pathMatches = $true
+		}
+		if ($pathMatches)
 		{
 			return $true
 		}

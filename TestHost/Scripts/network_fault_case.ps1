@@ -4,9 +4,11 @@
     [ValidateSet('linux','windows')][string]$Platform='linux',
     [ValidateSet('h264','hevc')][string]$Codec='h264',
     [ValidateSet('tcp','udp')][string]$Transport='tcp',
-    [ValidateSet('N0','N1','N2','N3','N4','N5','N6','N7')][string]$Condition='N1'
+    [ValidateSet('N0','N1','N2','N3','N4','N5','N6','N7')][string]$Condition='N1',
+    [switch]$PrepareOnly
 )
 $ErrorActionPreference='Stop'
+if($PrepareOnly -and $Condition -ne 'N0'){throw '짧은 준비 점검은 무장애 N0에만 사용할 수 있습니다.'}
 $OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new()
 $repo=(Resolve-Path "$PSScriptRoot\..\..").Path
 Set-Location $repo
@@ -15,6 +17,12 @@ $case=Join-Path $ReportRoot "measurements\$Tag"
 if(Test-Path -LiteralPath $case){throw '기존 측정 자료를 덮어쓰지 않습니다.'}
 New-Item -ItemType Directory -Force -Path "$case\saved" | Out-Null
 $state=Get-Content -Raw -Encoding UTF8 "$ReportRoot\configuration.json" | ConvertFrom-Json
+if($Platform -eq 'linux' -and $Transport -eq 'udp')
+{
+    Assert-DTCctvIdle
+    & python "$PSScriptRoot\prepare_netem_owner.py" $ReportRoot *> "$case\owner-prepare.log"
+    if($LASTEXITCODE -ne 0){throw '독립 UDP 네트워크 도구 준비 실패'}
+}
 $netOwner=Get-Content -Raw -Encoding UTF8 "$ReportRoot\network-owner.json" | ConvertFrom-Json
 $netId=$netOwner.id
 if($netId -notmatch '^[0-9a-f]{64}$'){throw '소유 네트워크 컨테이너 ID 오류'}
@@ -24,9 +32,11 @@ Assert-DTCctvIdle
 $lock=Enter-DTCctvTestLock
 $owned=[Collections.Generic.List[object]]::new()
 $container=$null;$initialized=$false;$reader=$null;$n6=$null
-$result=[ordered]@{status='FAIL';tag=$Tag;platform=$Platform;codec=$Codec;transport=$Transport;condition=$Condition;started_at=(Get-Date -Format o);source_cpp=$state.source_cpp;game_seconds=185;impairment_seconds_requested=132;evaluation_seconds_requested=120;channels=16;original_fps=30;note=''}
+$seconds=if($PrepareOnly){25}else{185}
+$result=[ordered]@{status='FAIL';tag=$Tag;platform=$Platform;codec=$Codec;transport=$Transport;condition=$Condition;started_at=(Get-Date -Format o);source_cpp=$state.source_cpp;game_seconds=$seconds;impairment_seconds_requested=132;evaluation_seconds_requested=120;channels=16;original_fps=30;prepare_only=[bool]$PrepareOnly;note=''}
+if($PrepareOnly){$result.impairment_seconds_requested=0;$result.evaluation_seconds_requested=0}
 $result['script_hashes']=@{}
-foreach($name in @('DTCctvTestCommon.ps1','netem_runtime.js','netem_control.sh','network_fault_case.ps1')){$result.script_hashes[$name]=(Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $name) -Algorithm SHA256).Hash}
+foreach($name in @('DTCctvTestCommon.ps1','netem_runtime.js','netem_control.sh','network_fault_case.ps1','prepare_netem_owner.py')){$result.script_hashes[$name]=(Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $name) -Algorithm SHA256).Hash}
 $checkpointPath=Join-Path (Split-Path $ReportRoot) 'checkpoint.json'
 $checkpoint=Get-Content -Raw -Encoding UTF8 $checkpointPath | ConvertFrom-Json
 $checkpoint|Add-Member -MemberType NoteProperty -Name active_measurement -Value @{tag=$Tag;started_at=$result.started_at;platform=$Platform;codec=$Codec;transport=$Transport;condition=$Condition} -Force
@@ -49,6 +59,30 @@ function Get-Clock
 function Save-Event([string]$Name,$Clock)
 {
     [pscustomobject]@{event=$Name;t=$(if($Clock){$Clock.t}else{$null});utc=[datetime]::UtcNow.ToString('o')} | ConvertTo-Json -Compress | Add-Content -Encoding UTF8 "$case\network-events.jsonl"
+}
+function Get-Baseline($Clock)
+{
+    $sets=@()
+    if($Platform -eq 'linux')
+    {
+        $files=@(Get-ChildItem -LiteralPath "$case\saved" -Recurse -Filter 'channel-*.csv' -File)
+        foreach($f in $files){$sets+=,@(Import-Csv -LiteralPath $f.FullName)}
+    }
+    else
+    {
+        $groups=@(Import-Csv -LiteralPath "$case\samples.channels.csv" | Group-Object channel)
+        foreach($g in $groups){$sets+=,@($g.Group)}
+    }
+    $checks=@()
+    foreach($seq in $sets)
+    {
+        $end=$seq[-1]
+        $begin=@($seq | Where-Object {[double]$_.t -ge [double]$end.t-4})[0]
+        $seconds=[double]$end.t-[double]$begin.t
+        $fps=if($seconds -gt 0){([long]$end.decoded-[long]$begin.decoded)/$seconds}else{0}
+        $checks+=@{playing=[int]$end.state -eq 2;decode_fps=$fps;t=[double]$end.t}
+    }
+    return $checks
 }
 function Control([string]$Action,[string]$Scenario='', [long]$Aggregate=0)
 {
@@ -99,10 +133,17 @@ try
     if($Platform -eq 'linux')
     {
         $url='rtsp://host.docker.internal:8554/cam'
+        if($Transport -eq 'udp')
+        {
+            $relay=Start-DTCctvOwnedProcess -File $docker -Arguments "exec $netId node /runtime.js udp-relay 18555 host.docker.internal 8554 30000 64" -WorkingDirectory $repo -LogPrefix "$case\udp-relay" -Owned $owned
+            $deadline=[datetime]::UtcNow.AddSeconds(10)
+            while(-not(Select-String -LiteralPath "$case\udp-relay.stdout.log" -SimpleMatch UDP_RELAY_READY -Quiet -ErrorAction SilentlyContinue)){if([datetime]::UtcNow -gt $deadline){throw 'UDP 중계 준비 실패'};Start-Sleep -Milliseconds 100}
+            $url='rtsp://127.0.0.1:18555/cam'
+        }
         $channels=@();for($i=0;$i -lt 16;$i++){$channels+=@{url=$url;transport=$Transport}}
         Write-DTCctvJson "$case\input.json" @{schema_version=1;channels=$channels}
         $create=@('create','--pull=never','--user','1000:1000','--network',"container:$netId",'--read-only','--tmpfs','/tmp:rw,exec,mode=1777','--gpus','all','--env','NVIDIA_DRIVER_CAPABILITIES=all','--env','LD_LIBRARY_PATH=/package/DTCctvTestHost/Binaries/Linux',
-            '--mount',"type=bind,source=$($state.packages)\Linux,target=/package,readonly",'--mount',"type=bind,source=$case\saved,target=/package/DTCctvTestHost/Saved",'--mount',"type=bind,source=$case,target=/reports",'--mount',"type=bind,source=$PSScriptRoot\netem_runtime.js,target=/runtime.js,readonly",'--label','dtcctv.task=CCTV-01K-rpm-retest','--entrypoint','/usr/local/bin/node',$netOwner.image,'/runtime.js','player','/reports/resources.jsonl','/package/DTCctvTestHost/Binaries/Linux/DTCctvTestHost','-nullrhi','-unattended','-nosplash','-nosound','-CctvCheckList=/reports/input.json','-CctvCheckSeconds=185','-ExecCmds=t.MaxFPS 60','-abslog=/reports/game.log')
+            '--mount',"type=bind,source=$($state.packages)\Linux,target=/package,readonly",'--mount',"type=bind,source=$case\saved,target=/package/DTCctvTestHost/Saved",'--mount',"type=bind,source=$case,target=/reports",'--mount',"type=bind,source=$PSScriptRoot\netem_runtime.js,target=/runtime.js,readonly",'--label','dtcctv.task=CCTV-01K-rpm-retest','--entrypoint','/usr/local/bin/node',$netOwner.image,'/runtime.js','player','/reports/resources.jsonl','/package/DTCctvTestHost/Binaries/Linux/DTCctvTestHost','-nullrhi','-unattended','-nosplash','-nosound','-CctvCheckList=/reports/input.json',"-CctvCheckSeconds=$seconds",'-ExecCmds=t.MaxFPS 60','-abslog=/reports/game.log')
         $created=& docker @create 2> "$case\create.stderr.log"
         if($LASTEXITCODE -ne 0 -or $created -notmatch '^[0-9a-f]{64}$'){throw 'Linux 자체 플레이어 컨테이너 생성 실패'}
         $container=[string]$created
@@ -125,6 +166,7 @@ try
     while(-not $reader.Process.HasExited)
     {
         Assert-DTCctvMeasurementIdle -Owned $owned
+        if($publisher.Process.HasExited -or $server.Process.HasExited){$result.status='ENV_BLOCKED';throw '측정 도중 송출 프로세스가 종료돼 시험 경로가 유효하지 않음'}
         $clock=Get-Clock
         if($clock)
         {
@@ -134,8 +176,16 @@ try
             if($t -ge 10 -and $null -eq $wireFirst){$wireFirst=[long](& docker exec $netId cat /sys/class/net/dtcctvifb/statistics/rx_bytes);$wireAt=$t}
             if($t -ge 20 -and $null -eq $phaseStart)
             {
+                $checks=@(Get-Baseline $clock)
+                $result['baseline_channels']=$checks
+                if($checks.Count -ne 16 -or @($checks | Where-Object {-not $_.playing -or $_.decode_fps -le 0}).Count -gt 0)
+                {
+                    $result.status='ENV_BLOCKED'
+                    throw '장애 적용 전16채널 Playing/새 프레임 수신 경로가 성립하지 않아 측정 미수행'
+                }
                 $wireLast=[long](& docker exec $netId cat /sys/class/net/dtcctvifb/statistics/rx_bytes)
                 $aggregate=[long](($wireLast-$wireFirst)*8/($t-$wireAt))
+                $result['aggregate_baseline_observation']=@{first_bytes=$wireFirst;last_bytes=$wireLast;first_t=$wireAt;last_t=$t;method='수신 IFB의 실제 네트워크 바이트·헤더 포함';rate_80_percent_bps=[long][math]::Floor($aggregate*4/5)}
                 Save-Event impairment-start-before $clock
                 if($Condition -eq 'N5'){Control apply N5 $aggregate}elseif($Condition -notin @('N0','N6')){Control apply $Condition}
                 $phaseStart=(Get-Clock).t
@@ -167,8 +217,8 @@ try
     }
     Assert-DTCctvMeasurementIdle -Owned $owned -Force
     $result['native_exit_code']=$reader.Process.ExitCode
-    $result.status='MEASURED'
-    if($null -eq $phaseStart -or -not $cleared){throw '장애 적용/해제 구간 미완료'}
+    $result.status=if($PrepareOnly){'PREPARED'}else{'MEASURED'}
+    if(-not $PrepareOnly -and ($null -eq $phaseStart -or -not $cleared)){throw '장애 적용/해제 구간 미완료'}
     if($n6 -and $n6.Process.ExitCode -ne 0){throw '10초 단절 제어 실패'}
 }
 catch
@@ -179,6 +229,7 @@ catch
 }
 finally
 {
+    if($Platform -eq 'linux' -and $Transport -eq 'udp'){& docker exec $netId node /runtime.js stop-udp-relay *> "$case\udp-relay-stop.log"}
     if($Platform -eq 'windows'){& docker exec $netId node /runtime.js stop-relay *> "$case\relay-stop.log"}
     if($initialized)
     {

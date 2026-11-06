@@ -43,6 +43,7 @@ case "$action" in
     fi
     tc qdisc add dev "$ifb" root netem limit "$limit" delay 0ms
     printf '%s\n' "$interface" > "$state"
+    cat /proc/sys/kernel/random/uuid > "$state.epoch"
     trap - EXIT
     ;;
   apply)
@@ -63,9 +64,12 @@ case "$action" in
         tc qdisc replace dev "$ifb" root netem limit "$limit" rate "${rate}bit"
         ;;
       N6)
+        epoch=$(cat "$state.epoch")
         tc qdisc replace dev "$ifb" root netem limit "$limit" loss 100%
         date -u '+%Y-%m-%dT%H:%M:%SZ 단절 시작'
         sleep 10
+        # 중단·재준비된 다음 시험의 인터페이스를 늦게 수정하지 않는다.
+        [ -f "$state.epoch" ] && [ "$(cat "$state.epoch")" = "$epoch" ] || exit 3
         tc qdisc del dev "$ifb" root
         tc qdisc add dev "$ifb" root netem limit "$limit" delay 0ms
         date -u '+%Y-%m-%dT%H:%M:%SZ 복구 시작'
@@ -84,7 +88,7 @@ case "$action" in
     [ -f "$state" ] && [ "$(cat "$state")" = "$interface" ] || exit 2
     tc qdisc del dev "$interface" ingress
     ip link del "$ifb"
-    rm -f "$state"
+    rm -f "$state" "$state.epoch"
     exit 0
     ;;
   status) ;;

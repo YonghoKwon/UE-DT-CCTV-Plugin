@@ -3,6 +3,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const cp = require('child_process');
 const net = require('net');
+const dgram = require('dgram');
 const path = require('path');
 
 function fingerprint(text) {
@@ -84,11 +85,97 @@ function relay(port, upstream, upstreamPort) {
   const stop=()=>{for(const s of sockets)s.destroy();server.close(()=>{try{fs.unlinkSync('/tmp/dtcctv-relay-owner.json');}catch{}process.exit(0);});};
   process.on('SIGTERM',stop);process.on('SIGINT',stop);
 }
+function udpRelay(port, upstream, upstreamPort, base, pairs) {
+  const sessions=new Set();const used=new Set();
+  const ownerFile='/tmp/dtcctv-udp-relay-owner.json';
+  fs.writeFileSync(ownerFile,JSON.stringify({pid:process.pid,start_ticks:stat(process.pid).start_ticks,command:process.argv}));
+  function framed(socket,callback) {
+    let buffer=Buffer.alloc(0);let queue=Promise.resolve();
+    socket.on('data',chunk=>{
+      buffer=Buffer.concat([buffer,chunk]);
+      if(buffer.length>2*1024*1024){socket.destroy();return;}
+      while(true){
+        const end=buffer.indexOf('\r\n\r\n');if(end<0)break;
+        const header=buffer.subarray(0,end+4).toString('utf8');
+        const bytes=Number((header.match(/^Content-Length:\s*(\d+)/im)||[])[1]||0);
+        if(buffer.length<end+4+bytes)break;
+        const body=buffer.subarray(end+4,end+4+bytes);buffer=buffer.subarray(end+4+bytes);
+        queue=queue.then(()=>callback(header,body)).catch(e=>{console.error(e.message);socket.destroy();});
+      }
+    });
+  }
+  async function allocate(ctx,clientPorts) {
+    const forbidden=new Set(clientPorts);
+    for(const x of sessions)if(x.route)for(const p of x.route.clientPorts)forbidden.add(p);
+    const index=Array.from({length:pairs},(_,i)=>i).find(i=>!used.has(i) && !forbidden.has(base+2*i) && !forbidden.has(base+2*i+1));
+    if(index===undefined)throw Error('UDP 중계 포트 풀 부족');
+    used.add(index);const ports=[base+2*index,base+2*index+1];const sockets=[];
+    const route={ports,clientPorts,serverPorts:null,sockets,received:[0,0],feedback:[0,0]};ctx.route=route;
+    await Promise.all(ports.map((p,i)=>new Promise((resolve,reject)=>{
+      const socket=dgram.createSocket('udp4');sockets.push(socket);
+      socket.on('error',reject);
+      socket.on('message',(data,peer)=>{
+        if(peer.address==='127.0.0.1' && peer.port===clientPorts[i]){
+          if(route.serverPorts && ctx.remote.remoteAddress){route.feedback[i]++;socket.send(data,route.serverPorts[i],ctx.remote.remoteAddress);}
+        }else{
+          route.received[i]++;socket.send(data,clientPorts[i],'127.0.0.1');
+        }
+      });
+      socket.bind(p,'0.0.0.0',()=>resolve());
+    })));
+    route.close=()=>{
+      let left=sockets.length;
+      for(const socket of sockets){try{socket.close(()=>{if(--left===0)used.delete(index);});}catch{if(--left===0)used.delete(index);}}
+    };
+    return route;
+  }
+  const server=net.createServer(client=>{
+    const remote=net.connect(upstreamPort,upstream);const ctx={client,remote,route:null,setupCseq:null};sessions.add(ctx);
+    const close=()=>{if(!sessions.has(ctx))return;sessions.delete(ctx);client.destroy();remote.destroy();if(ctx.route && ctx.route.close)ctx.route.close();};
+    client.on('close',close);remote.on('close',close);client.on('error',close);remote.on('error',close);
+    framed(client,async(header,body)=>{
+      if(/^SETUP /i.test(header)){
+        const match=header.match(/client_port=(\d+)-(\d+)/i);
+        if(!match || /RTP\/AVP\/TCP/i.test(header))throw Error('UDP SETUP 형식 불일치');
+        if(ctx.route)throw Error('동일 세션 복수 트랙은 이번 단일 비디오 시험 범위 밖');
+        const route=await allocate(ctx,[Number(match[1]),Number(match[2])]);
+        ctx.setupCseq=(header.match(/^CSeq:\s*(\d+)/im)||[])[1];
+        header=header.replace(/client_port=\d+-\d+/i,`client_port=${route.ports[0]}-${route.ports[1]}`);
+      }
+      remote.write(Buffer.concat([Buffer.from(header),body]));
+    });
+    framed(remote,async(header,body)=>{
+      if(ctx.route && (header.match(/^CSeq:\s*(\d+)/im)||[])[1]===ctx.setupCseq && /^RTSP\/1.0 200/.test(header)){
+        const match=header.match(/server_port=(\d+)-(\d+)/i);if(!match)throw Error('UDP 서버 포트 응답 없음');
+        ctx.route.serverPorts=[Number(match[1]),Number(match[2])];
+        header=header.replace(/client_port=\d+-\d+/i,`client_port=${ctx.route.clientPorts[0]}-${ctx.route.clientPorts[1]}`)
+          .replace(/server_port=\d+-\d+/i,`server_port=${ctx.route.ports[0]}-${ctx.route.ports[1]}`)
+          .replace(/;source=[^;\r\n]+/i,';source=127.0.0.1');
+        console.log(JSON.stringify({event:'UDP_SETUP',published_ports:ctx.route.ports,player_ports:ctx.route.clientPorts}));
+      }
+      client.write(Buffer.concat([Buffer.from(header),body]));
+    });
+  });
+  server.listen(port,'0.0.0.0',()=>console.log('UDP_RELAY_READY'));
+  const timer=setInterval(()=>{console.log(JSON.stringify({event:'UDP_COUNTERS',sessions:[...sessions].filter(x=>x.route).map(x=>({ports:x.route.ports,received:x.route.received,feedback:x.route.feedback}))}));},5000);
+  const stop=()=>{clearInterval(timer);for(const ctx of [...sessions]){ctx.client.destroy();ctx.remote.destroy();if(ctx.route && ctx.route.close)ctx.route.close();}server.close(()=>{try{fs.unlinkSync(ownerFile);}catch{}process.exit(0);});};
+  process.on('SIGTERM',stop);process.on('SIGINT',stop);
+}
 try {
   const [mode,...args]=process.argv.slice(2);
   if(mode==='rpm')installRpms(args[0]);
   else if(mode==='player')player(args[0],args.slice(1));
   else if(mode==='relay')relay(Number(args[0]),args[1],Number(args[2]));
+  else if(mode==='udp-relay')udpRelay(Number(args[0]),args[1],Number(args[2]),Number(args[3]),Number(args[4]));
+  else if(mode==='stop-udp-relay'){
+    const file='/tmp/dtcctv-udp-relay-owner.json';
+    if(fs.existsSync(file)){
+      const owner=JSON.parse(fs.readFileSync(file,'utf8'));
+      const command=fs.readFileSync(`/proc/${owner.pid}/cmdline`,'utf8').split('\0').filter(Boolean);
+      if(stat(owner.pid).start_ticks !== owner.start_ticks || JSON.stringify(command.slice(1))!==JSON.stringify(owner.command.slice(1)) || fs.realpathSync(`/proc/${owner.pid}/exe`)!==fs.realpathSync(owner.command[0]))throw Error('UDP 중계 PID 소유권 불일치');
+      process.kill(owner.pid,'SIGTERM');
+    }
+  }
   else if(mode==='stop-relay'){
     if(fs.existsSync('/tmp/dtcctv-relay-owner.json')){
       const owner=JSON.parse(fs.readFileSync('/tmp/dtcctv-relay-owner.json','utf8'));
