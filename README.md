@@ -22,6 +22,36 @@ H264 High B2·GOP 12초, H265 Main 30/60fps·GOP 12초·Main10·4K 및 메인/�
 
 GOP 2초·1080p30 H264/H265와 작은 뷰의 H264 640 서브를 본 측정 기준의 시작 설정으로 권장합니다. 기본 HW4는 H265에서도 유지했으며 `프로젝트 설정 → Game → DT CCTV → MaxHardwareDecodeStreams`로 조정합니다. 긴 GOP의 첫 화면 대기·스레드 설정·코드 버전·HW 미지원과 운영 점검 명령은 [코덱 검증 상세](docs/CODEC_VALIDATION.md)를 참조하십시오. Linux 렌더링·실제 카메라·실제 동시 인코딩 부하는 미검증입니다. 입력 규격을 낮춘 별도 조건으로 기존 FAIL을 바꾸지 않았습니다.
 
+<!-- CCTV-01L-CAPACITY-BEGIN -->
+## 코덱별 최대 채널 수 (CCTV-01L)
+
+타이머 옵션 포함 최신 C++ `4cd1763`를 정리 후 재빌드하고 새 Win64·Linux 패키지로 시험했습니다. `bIgnoreWindowsTimerThrottling`은 기본 꺼짐입니다. Ryzen 7 7800X3D 8코어16스레드·RTX4070Ti(12GB)·RAM64GB 기준입니다. Windows는1920×1080 오프스크린·게임60fps, Linux는 RHEL8 nullrhi 디코딩입니다. 위 CCTV-01G 표는 이전 코드의16채널 시험 이력이며, 다음 표는 최신 코드의 채널 수 한계 탐색입니다.
+
+Linux의 추가 제약: Docker/WSL VM의 MemTotal은약3.82GiB입니다(4106125312바이트). 컨테이너별 메모리·CPU 쿼터는max이고 CPU0~15가 열려 있지만, PC RAM64GB 전체를 Linux에 제공한 시험은 아닙니다. `Saved/Reports/CCTV-01L/linux-memory-environment.json`과 조합별 RSS·메모리 비율을 함께 확인해야 합니다. 이 제약은 변경하지 않았으며 Linux 운영 서버의 한계로 그대로 일반화하지 않습니다.
+
+
+|코덱|Windows (HW4 + SW)|Linux SW|Linux 자동|병목|
+|---|---|---|---|---|
+|H.265 Main 1080p30|32 이상|32 이상|32 이상|32까지 상한 미도달|
+|H.264 High 1080p30 B2|32 이상|32 이상|32 이상|32까지 상한 미도달|
+|H.265 Main 4K30|16채널|16채널|16채널|Windows: 디코딩 경합 후보(18ch 최저27.55fps·CPU82.2%) / SW: 디코딩 경합 후보(18ch 최저22.05fps·CPU80.4%) / 자동: 디코딩 경합 후보(18ch 최저28.54fps·CPU75.5%)|
+|H.264 1080p60|20채널|32 이상|32 이상|Windows: 표시·게임프레임 소비 부족(22ch 대체2.27%)|
+|H.265 Main 1080p60|18채널|30채널|30채널|Windows: 표시·게임프레임 소비 부족(20ch 대체1.74%) / SW: 디코딩 경합 후보(32ch 최저51.78fps·CPU80.0%) / 자동: HW 과부하 로그·SW 전환(32ch 재연결1)|
+|H.265 Main10 1080p30|32 이상|미확정(26채널1회통과)|NOT_RUN|SW: 디코딩 경합 후보(32ch 최저13.11fps·CPU83.2%)|
+|MJPEG 4:2:2 1080p30|NOT_RUN|NOT_RUN|NOT_RUN|미측정 범위 있음|
+
+각 숫자는 경계값을 두 번 통과한 최대 측정값입니다. “32 이상”은32채널 두 번 통과이며 그 위의 실제 상한은 미측정입니다. 초기10초 제외80초 이상, 채널별 최저 디코딩·Windows 표시FPS≥원본97%, 전 채널 Playing·손실/재연결/오류0, Windows p95≤70ms(30fps)/50ms(60fps)·대체≤1%·PNG 정상 기준입니다. Linux는 표시·age·대체·색을 검증한 값이 아닙니다. 코덱 우선순위와4시간 예산 때문에 완료하지 못한 경로는 NOT_RUN으로 남겼습니다. 상세 수치와 실패·준비 이력은 `Saved/Reports/CCTV-01L/RESULT.md`, `result.json`, `comparison.csv`에 있습니다.
+
+SW 디코딩이 CPU에 묶인 경우에만 대략 `기준 채널 수 × (새 물리 코어 수/8) × 코어당 성능 비율`을 초기 추정으로 사용할 수 있습니다. 이는 검증된 보증값이 아니며 메모리 대역폭·동시 스레드·클럭·화면 업로드 병목에는 적용하지 않습니다. GPU는 CUDA 코어 수나 VRAM 크기에 비례해 환산하지 말고 NVDEC의 코덱별 처리량을 확인합니다. 픽셀 처리량의 참고로4K30은1080p30의4배,1080p60은30fps의2배이나10비트 변환·B프레임·비트레이트 영향은 별도입니다.
+
+`MaxHardwareDecodeStreams`는 기본4를 유지합니다. 늘릴 때는1~2채널씩 바꿔 CPU·NVDEC·GPU·메모리와 채널별 FPS를 다시 측정합니다. 작은 뷰는 서브 스트림을 사용하고, 카메라의 FPS·해상도·비트레이트·GOP를 조정한 결과는 별도 조건으로 검증합니다. 한계 측정은 고정1920×1080의 자동 격자여서 채널 증가 시 타일 크기도 줄며 다른 창 크기로 그대로 일반화할 수 없습니다.
+
+이 PC의 로컬 반복 파일 결과이며 실제32대 카메라나 운영 서버 성능을 보증하지 않습니다. 운영 서버에서01J 점검 도구로 실제 주소·계정·코덱·FPS·표시를 다시 확인합니다. 01J 점검 UI는최대16개이므로16초과 동시 부하는 운영 프로젝트 또는 별도 다채널 하네스로 검증해야 하며,16채널씩 나눈 점검을32채널 동시 수용으로 간주하지 않습니다. 실제 Pixel Streaming 동시 인코딩과 장시간 안정성은 별도 검증입니다.
+
+GPU 환산 근거: NVDEC는 연산·그래픽 엔진과 독립된 디코더이며 코덱별 처리량과 엔진 수를 봐야 합니다. [NVIDIA NVDEC 공식 프로그래밍 가이드](https://docs.nvidia.com/video-technologies/video-codec-sdk/13.1/nvdec-video-decoder-api-prog-guide/index.html), [공식 처리량 안내](https://docs.nvidia.com/video-technologies/video-codec-sdk/13.1/nvdec-application-note/index.html). CPU 환산식은 이번 측정에 대한 거친 추정이며 별도 장비에서 검증한 결과가 아닙니다.
+
+<!-- CCTV-01L-CAPACITY-END -->
+
 ## 현장 점검 방법 (CCTV-01J)
 
 현장 점검 화면은 운영 프로젝트에 도구를 설치하지 않고 **TestHost 패키지**에서 실행합니다. Windows 실행 파일은 `<패키지>/Windows/DTCctvTestHost/Binaries/Win64/DTCctvTestHost.exe`입니다. 별도 명령줄 인자 없이 실행하면 점검 화면이 열립니다. 현재 PC에서 만든 패키지의 실제 위치와 검증 자료는 `Saved/Reports/CCTV-01J/result.json`에 기록합니다.

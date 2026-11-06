@@ -27,6 +27,10 @@ def build(final=False):
             p=P/'boundaries'/(codec+'-'+mode+'.json')
             b=read(p) if p.exists() else {'codec':codec,'mode':mode,'complete':False,'confirmed_max_channels':None,'status':'NOT_RUN','note':'우선순위에 따른 실행 대기' if not final else '4시간 예산 내 완료하지 못함. 상위 우선순위 측정을 먼저 수행.'}
             values=[a for a in results if a['codec_case']==codec and a['mode']==mode]
+            if not b['complete'] and values:
+                passed=[a['count'] for a in values if a['numeric_status']=='PASS']
+                b['highest_single_pass_channels']=max(passed) if passed else None
+                b['note']+='; 일부 단일 실행 결과는 보존했으나 경계값 두 번 통과를 완료하지 못해 최대값 미확정.'
             maximum=b.get('confirmed_max_channels')
             evidence=[a for a in values if a['count']==maximum and a['numeric_status']=='PASS']
             if maximum:
@@ -53,6 +57,7 @@ def build(final=False):
     head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
     limits=['Windows는 게임60fps·1920×1080 오프스크린, 타이머 옵션 기본 꺼짐. 표시 FPS는 렌더 명령 등록이며 실제 모니터 표시나 종단 간 지연 아님.',
             'Linux 두 경로는 nullrhi 디코딩 한계만 판정. 표시 FPS·frame age·대체율·색·PNG를 PASS로 간주하지 않음.',
+            'Linux VM MemTotal은 약3.82GiB(4106125312바이트). 컨테이너 메모리·CPU 쿼터는max, CPU0~15 사용. PC RAM64GB 전체를 Linux가 사용할 수 있는 시험이 아님. 실패 조합의 메모리 압력과 CPU 원인은 분리 확정하지 못했으며 호스트·WSL 설정은 변경하지 않음.',
             '32 이상은 32채널 두 번 통과를 뜻하며 34~64채널이나 타 장비 성능을 검증한 표현이 아님.',
             '로컬 파일 반복 송출·단일 PC·고정 창 크기/자동 격자 기준. 채널 증가 시 타일 크기도 줄어 변환·업로드 비용이 달라짐.',
             '짧은 채널 한계 측정은 60분 소크·실제 카메라·실제 Pixel Streaming 동시 인코딩의 증거를 대체하지 않음. 이번 사용자 요청에 따라 최종 코덱 회귀로 수행.']
@@ -69,7 +74,7 @@ def build(final=False):
         for mode in ['Windows','LinuxSW','LinuxCUDA']:
             b=next(x for x in boundaries if x['codec']==codec and x['mode']==mode)
             n=b.get('confirmed_max_channels')
-            label='32 이상' if n==32 else str(n)+'채널' if n else '통과값 없음' if n==0 else 'NOT_RUN'
+            label='32 이상' if n==32 else str(n)+'채널' if n else '통과값 없음' if n==0 else '미확정('+str(b['highest_single_pass_channels'])+'채널1회통과)' if b.get('highest_single_pass_channels') else 'NOT_RUN'
             if b['status']!='PASS':label+=' ('+b['status']+')'
             row.append(label)
         lines.append('|'+codec+'|'+'|'.join(row)+'|')
