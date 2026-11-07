@@ -70,6 +70,7 @@ private:
 	FString ShotPath;
 	FString ResizeScenario;
 	int32 Count = 16;
+	int32 LegacyCount = 0;
 	double DurationSeconds = 60.0;
 	double StartSeconds = 0.0;
 	double WindowStartSeconds = 0.0;

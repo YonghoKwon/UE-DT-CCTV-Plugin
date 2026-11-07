@@ -108,6 +108,8 @@ void UDTCctvHarnessSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		return;
 	}
 	FParse::Value(CommandLine, TEXT("-CctvCount="), Count);
+	FParse::Value(CommandLine, TEXT("-CctvLegacyCount="), LegacyCount);
+	LegacyCount = FMath::Clamp(LegacyCount, 0, 4);
 	FParse::Value(CommandLine, TEXT("-CctvSeconds="), DurationSeconds);
 	FParse::Value(CommandLine, TEXT("-CctvCsv="), CsvPath);
 	FParse::Value(CommandLine, TEXT("-CctvShot="), ShotPath);
@@ -168,7 +170,7 @@ void UDTCctvHarnessSubsystem::BuildViews()
 	Canvas = RootWidget->WidgetTree->ConstructWidget<UCanvasPanel>();
 	RootWidget->WidgetTree->RootWidget = Canvas;
 
-	const int32 Columns = FMath::CeilToInt(FMath::Sqrt(static_cast<float>(Count)));
+	const int32 Columns = FMath::CeilToInt(FMath::Sqrt(static_cast<float>(Count + LegacyCount)));
 	for (int32 Index = 0; Index < Count; ++Index)
 	{
 		UDTCctvView* View = RootWidget->WidgetTree->ConstructWidget<UDTCctvView>();
@@ -269,8 +271,8 @@ void UDTCctvHarnessSubsystem::UpdateScenario(double Elapsed)
 	{
 		Area = FVector2D(1920.0, 1080.0);
 	}
-	const int32 Columns = FMath::CeilToInt(FMath::Sqrt(static_cast<float>(Count)));
-	const int32 Rows = FMath::DivideAndRoundUp(Count, Columns);
+	const int32 Columns = FMath::CeilToInt(FMath::Sqrt(static_cast<float>(Count + LegacyCount)));
+	const int32 Rows = FMath::DivideAndRoundUp(Count + LegacyCount, Columns);
 	const FVector2D Cell(Area.X / Columns, Area.Y / Rows);
 	const double Phase = FMath::Fmod(Elapsed, ResizePeriod) / ResizePeriod;
 	const int32 ScenarioPhase = FMath::FloorToInt(Elapsed * 2.0 / ResizePeriod);
