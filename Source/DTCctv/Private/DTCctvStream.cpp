@@ -390,6 +390,11 @@ FDTCctvStreamStats UDTCctvStream::GetStats() const
 	{
 		Session->FillStats(Stats);
 	}
+	else
+	{
+		Stats.LastError = Accumulated.LastError;
+		Stats.LastErrorCode = Accumulated.LastErrorCode;
+	}
 	Stats.PacketsReceived += Accumulated.PacketsReceived;
 	Stats.ReadCalls += Accumulated.ReadCalls;
 	Stats.ReadWaitSeconds += Accumulated.ReadWaitSeconds;
