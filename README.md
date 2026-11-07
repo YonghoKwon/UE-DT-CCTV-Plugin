@@ -149,9 +149,11 @@ Windows 11에서 해당 프로세스의 타이머 요청을 존중하도록 비�
 
 1. `git lfs pull`로 원본을 준비하고 필수 소스·셰이더·라이선스를 `Plugins/DTCctv/`에 복사합니다. TestHost와 시험 산출물은 제외합니다.
 2. `.uproject`의 DTCctv 활성화와 호출 모듈 의존성을 추가하고, DTCore 로그·UMG 수명·배포 파일을 확인합니다.
-3. 기본값에서 시작합니다. FFMPEGMedia가 설치된 경우 Linux는 해결 전까지 둘 중 하나만 활성화하며 실제 Pixel Streaming 동시 부하는 별도 검증합니다.
+3. 기본값에서 시작합니다. FFMPEGMedia가 설치된 경우 아래 검증 버전·전송 조건을 확인하고, 실제 Pixel Streaming 동시 부하는 별도 검증합니다.
 
-기존 FFMPEGMedia와의 CCTV-01V 공존 빌드·패키징은 Windows·Linux 모두 성공했습니다. 기존 플레이어를 열지 않은 DTCctv 16채널도 통과했지만, 실제 4+12 동시 재생은 두 플랫폼 모두 신·구 FFmpeg 함수 import 혼합과 구 avformat 충돌로 **FAIL**입니다. 링크 성공을 안전한 동시 재생으로 확대하지 않습니다. [원인과 검증 범위](docs/FFMPEG_MEDIA_COEXISTENCE.md)를 확인하십시오.
+기존 FFMPEGMedia main `819e004`와 **함께 설치·동시 재생 가능**함을 CCTV-01Y에서 확인했습니다. DTCctv의 FFmpeg 호출 52개를 전체 경로로 연 라이브러리의 함수 표로 분리해 01V의 import 혼합을 해소했습니다. Windows·Linux에서 기존 4채널+DTCctv 12채널이 각각 유효 124.2초·123.9초 재생됐고 크래시·교착·함수 섞임은 0이었습니다. Linux의 기존 플레이어는 이 시험 프로세스에만 RTSP TCP 설정을 적용했습니다(초기 UDP 시험 실패는 보존). ABI 공존을 위한 `PlatformDenyList`는 필요 없습니다. 기존 플러그인 원본과 양쪽 FFmpeg 바이너리는 바꾸지 않았습니다.
+
+CCTV-01Y 전체 판정은 별도 수명 회귀 Y6 때문에 **FAIL**입니다. 장애 복구 6.226초가 5초 기준을 넘었고, Close/Open 20회의 후반 GPU 계정값 기울기 +0.00004735MiB/회가 비증가 기준에 미달했습니다. 공존 성공을 이 실패나 운영 서버 검증의 합격으로 확대하지 않습니다. 기존 플러그인을 나중에 제거할 때는 사용처 참조 → `.uproject` 항목 → 플러그인 폴더 제거 → 양 플랫폼 재빌드·점검 순서로 진행합니다. [원인과 검증 범위](docs/FFMPEG_MEDIA_COEXISTENCE.md)를 확인하십시오.
 
 설치·LFS 규칙·설정·점검 순서는 [운영 프로젝트 적용 안내서](docs/INTEGRATION_GUIDE.md)를 따르십시오.
 

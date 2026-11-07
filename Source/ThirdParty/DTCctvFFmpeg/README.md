@@ -14,3 +14,15 @@
 - Windows import `.lib` 5개와 Linux `libdtcctv_*.so` 링커 스크립트 5개는 더 이상 링크 입력이 아니므로 제거했습니다. DLL/SO 5개와 헤더·라이선스는 유지합니다. 정적 import 제거와 실제 결합 검증 범위는 [공존 검증 기록](../../../docs/FFMPEG_MEDIA_COEXISTENCE.md)을 따릅니다.
 - 바이너리는 Git LFS로 관리합니다. 클론 후 `git lfs pull`이 필요할 수 있습니다.
 - 종료 시 세션·렌더 명령·HW 참조를 정리한 뒤 라이브러리를 역순 해제합니다. 남은 세션·프레임 소유자가 있으면 해제를 보류하고 로그에 근거를 남깁니다. 동시 재생 수용 여부는 위 검증 기록의 최신 결과를 확인하십시오.
+
+현재 런타임 파일 목록(각 플랫폼 5개):
+
+| Windows `Win64/bin/` | Linux `Linux/lib/` |
+|---|---|
+| `avutil-60.dll` | `libavutil.so.60` |
+| `swresample-6.dll` | `libswresample.so.6` |
+| `swscale-9.dll` | `libswscale.so.9` |
+| `avcodec-62.dll` | `libavcodec.so.62` |
+| `avformat-62.dll` | `libavformat.so.62` |
+
+CCTV-01Y에서 단독·공존 패키지와 Editor 모듈의 신 계열 import/DT_NEEDED 및 DTCctv 오브젝트의 FFmpeg 미해결 심볼은 0이었습니다. 실행 주소·Windows IAT·Linux LD_DEBUG/maps로 구 호출은 구 계열, 새 함수 표와 새 라이브러리 내부 호출은 새 계열임을 확인했습니다. `RTLD_DEEPBIND`는 사용하지 않았습니다. 파일 누락 실제 실행은 크래시 없이 명시적 오류로 종료했고, 정상 시험 종료는 소유자 0에서 역순 해제를 확인했습니다. 소유자가 남아 해제를 보류하는 경로의 실제 장시간 종료 시험은 별도 미검증입니다. 전체 01Y 판정에는 Y6 실패가 있으므로 공존 결과와 구분합니다.

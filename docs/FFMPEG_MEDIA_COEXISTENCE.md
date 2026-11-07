@@ -1,6 +1,52 @@
 # FFMPEGMedia 설치·실행 공존 검증
 
-## CCTV-01V 현재 결론
+## CCTV-01Y 현재 결론 (2026-11-07)
+
+**main `819e004`와 함께 설치·동시 재생 가능.** Windows·Linux에서 기존 플레이어4+DTCctv12를 120초 이상 실제 재생했고 크래시·교착·함수 섞임0으로 통과했다. 기존 플러그인의 소스·빌드 규칙·바이너리·descriptor와 양쪽 FFmpeg 바이너리는 수정하지 않았다. 기존 원본1022개 파일, DTCctv 동봉 런타임10개 해시를 확인했다. 운영 프로젝트는 읽기만 했고 적용하지 않았다.
+
+**01Y 전체 판정은 Y6 때문에 FAIL이다.** 장애 복구6.226초가5초 기준을 넘었고, Close/Open20회 후반 GPU 계정값 기울기 +0.0000473485MiB/회가 비증가 기준에 미달했다. 공존 성공과 이 실패를 별도로 기록한다.
+
+### 호출 분리 방법
+
+수정 전 Windows COFF·Linux ELF 오브젝트의 FFmpeg 미해결 심볼은 플랫폼별52개로 같았다. 이 합집합 전체를 단일 함수 표로 옮겼다. 헤더 인라인·매크로가 남긴 호출도 오브젝트 검사 대상으로 삼았고, 수정 후 FFmpeg 미해결 심볼은0이었다. HW 장치·프레임·사전·로그·패킷·코덱·네트워크·스케일러 호출이 포함된다. 추가 브리지 바이너리는 만들지 않았다.
+
+DTCctv 빌드의 `.lib`와 `libdtcctv_*.so` 링크 입력을 제거했다. Windows는 스테이징 전체 경로 `LoadLibraryExW`와 `GetProcAddress`, Linux는 전체 경로 `dlopen(RTLD_NOW | RTLD_LOCAL)`과 `dlsym`으로 avutil→swresample→swscale→avcodec→avformat 순서로 연다. Editor는 DTCctv 모듈 Binaries, 패키지는 실행 파일 옆의 동일 이름·해시 파일을 사용한다. 파일·함수 하나라도 누락되면 표를 게시하지 않고 부분 핸들을 역순 정리한다. 스트림은 세션 생성 없이 Idle·LastError로 끝난다. 정상 종료에서는 세션·렌더·HW 소유자0을 확인한 후 역순 해제했다. 남은 소유자가 있으면 프로세스 수명까지 유지하는 방어 경로가 있다.
+
+Windows 실제 IAT의 구 호출 주소는 구58계열 DLL, DTCctv 함수 표52개 주소는 신 계열 DLL 범위에 있었다. Linux LD_DEBUG와 maps에서 구 호출은 구 계열, 신 라이브러리 내부 참조도 신 계열이었다. 섞임0이므로 `RTLD_DEEPBIND`는 사용하지 않았다.
+
+### 01Y 시험 결과
+
+| 게이트 | 판정 | 근거 |
+|---|---|---|
+| Y1 | PASS | 단독·공존 Win PE/Linux ELF와 Editor DLL의 신 계열 import·DT_NEEDED0, DTCctv 오브젝트 미해결 FFmpeg0 |
+| Y2 | PASS | 전체30개 단위 성공(일반29·경고동반1), 실패·미수행0. 파일·함수 누락 모의 포함 |
+| Y3 | PASS | 복사 패키지 avcodec62 제거 후 크래시0·종료0·정확한 파일 오류. 연결 점검 자체는 예상한 FAIL |
+| Y4 | PASS | 단독16채널: Win1080p60 decode/display59.9874/59.8671fps·p95 36ms, Linux30fps SW29.9882·자동29.9874fps. V6 오차2% 이내 |
+| Y5 | PASS | C1/C3/C6/C7/C8/H60×Windows CUDA/D3D11VA·Linux SW/CUDA 24조합, 각4채널 유효60초 이상. MJPEG는 지원되는 SW 폴백, Windows12조합 PNG 직접 검수 |
+| Y6 | FAIL | 복구6.226>5초, GPU OLS양수. Private+0.4681MiB/회·핸들·스레드 기준 통과, 서브 전환 통과. 20회 관측을100회 수렴으로 확대하지 않음 |
+| Y7 | PASS | 공존·기존 미사용16채널: Win59.9790/59.8823fps·p95 36ms, Linux SW30.0224·자동30.0105fps |
+| Y8 | PASS (Linux TCP) | 기존만4채널: Win유효124.936초·채널당3748~3749샘플, LinuxTCP124.937초·각3748샘플. 시각 진행·Playing·오류0·종료0. 초기LinuxUDP 프레임0 FAIL 보존 |
+| Y9 | PASS | 아래 동시 재생 표. 양 플랫폼120초 이상·크래시/교착0 |
+| Y10 | PASS | 실제 함수 주소·IAT·LD_DEBUG/maps에서 신·구 호출 섞임0·신 라이브러리 내부 결합 정상 |
+| Y11 | PASS | 공존 Editor 빌드·실제 GUI PIE 4+1 재생49.4초, 기존1456샘플·시각1455회 진행, 정상 Stop/종료0 |
+| Y12 | PASS | descriptor 원문 복원·시험 복사본 제외, 사전 계획24경로18282파일22,421,291,846바이트 삭제. 소유 프로세스/CID잔여0·기존Docker불변 |
+
+| 동시 재생 | DTCctv12 (HW4+SW8) | 기존4 | 공통 |
+|---|---|---|---|
+| Windows | 유효124.2초, decode29.9980/display29.9987fps, p95 20ms, 프레임 대체0, PNG16타일 정상 | 각3726샘플·시각 진행 | 전채널Playing, DTO손실/재연결/디코딩오류0, 종료0 |
+| Linux TCP | 유효123.9초, decode30fps, 최저채널29.9976fps | 각3717샘플·시각 진행 | 전채널Playing, DTO손실/재연결/디코딩오류0, 종료0 |
+
+### 적용과 남은 제한
+
+01V의 ABI 충돌 회피용 `PlatformDenyList`는 **필요 없다**. Linux의 기존 플레이어는 이 컨테이너 환경의 기본UDP에서 프레임0·타임아웃이었고, 기존 설정 클래스의 RTSP TCP를 **시험 프로세스 명령줄에만** 적용한 재시험에서 통과했다. nullrhi에서도 실제 비디오 샘플 진행을 확인했으므로 Linux 항목을 ENV_BLOCKED로 처리하지 않았다. 이 전송 설정 선택은 기존 소스·descriptor·설정 파일·기본값 변경이 아니다. 초기 실패는 gzip 원문과 분석으로 보존한다.
+
+구 `avdevice-58.dll` 오류126은 종전 단독 대조에서도 확인된 별도 제한으로 고치지 않았다. Linux 화면 렌더링·Pixel Streaming 인코딩 동시 부하·실제 카메라·운영 프로젝트·장시간 수명 수용은 이번 범위 밖이다. 함수·파일 누락 모의와 실제 파일 누락은 시험했지만 실제 변조 DLL의 함수 누락, 소유자 잔존 상태의 장시간 종료는 별도로 실행하지 않았다. Y6 실패의 후속 수정·재시험 범위는 별도 결정이 필요하다.
+
+나중에 기존 플러그인을 제거할 때는 운영 코드·미디어 에셋 참조 제거→`.uproject` 활성 항목 제거→플러그인 폴더 제거→양 플랫폼 재빌드·패키징·점검 순서로 진행한다. 이번 작업에서는 운영 프로젝트를 바꾸지 않았다.
+
+상세 자료: `Saved/Reports/CCTV-01Y/RESULT.md`, `result.json`, `function-inventory.json`, `Y1-static-analysis.json`, `Y5-codec-analysis.json`, `Y10-binding-analysis.json`, `Y11-pie-analysis.json`, `measurements/`, `cleanup-plan.md`, `scope-before-cleanup.json`, `cleanup-audit.json`. 아래 01V·01I·R15는 당시 기록으로 보존한다.
+
+## CCTV-01V 당시 결론 (01Y 이전)
 
 **전체 FAIL.** Windows·Linux의 두 플러그인 활성 빌드·패키징과 DTCctv 단독 재생은 확인했지만, 실제 4+12 동시 재생은 두 플랫폼 모두 충돌했다. 기존 FFMPEGMedia main `819e004`의 소스·빌드 규칙·바이너리는 수정하지 않았다. 아래 이전 01I·R15 기록은 당시 결과로 보존한다.
 
