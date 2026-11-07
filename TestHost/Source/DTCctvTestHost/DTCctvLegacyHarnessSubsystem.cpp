@@ -38,6 +38,8 @@ void UDTCctvLegacyHarnessSubsystem::Initialize(FSubsystemCollectionBase& Collect
 {
 	Super::Initialize(Collection);
 	const TCHAR* Command = FCommandLine::Get();
+	bLegacyOnly = FParse::Param(Command, TEXT("CctvLegacyOnly"));
+	FParse::Value(Command, TEXT("CctvSeconds="), DurationSeconds);
 	FParse::Value(Command, TEXT("CctvLegacyCount="), Count);
 	Count = FMath::Clamp(Count, 0, 4);
 	bEnabled = Count > 0;
@@ -71,7 +73,7 @@ void UDTCctvLegacyHarnessSubsystem::StartPlayers()
 		RootWidget->WidgetTree->RootWidget = Canvas;
 		RootWidget->AddToViewport(10);
 	}
-	FFileHelper::SaveStringToFile(TEXT("t,channel,player,is_playing,has_error,playback_seconds,frames,timestamp_changes,last_sample_seconds,width,height,open_accepted\n"), *CsvPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+	FFileHelper::SaveStringToFile(TEXT("t,channel,player,is_playing,has_error,playback_seconds,frames,timestamp_changes,last_sample_seconds,width,height,open_accepted,phase\n"), *CsvPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
 	for (int32 Index = 0; Index < Count; ++Index)
 	{
 		UMediaPlayer* Player = NewObject<UMediaPlayer>(this);
@@ -96,6 +98,10 @@ void UDTCctvLegacyHarnessSubsystem::StartPlayers()
 			Image->SetBrush(Brush);
 			UCanvasPanelSlot* Slot = Canvas->AddChildToCanvas(Image);
 			Slot->SetAnchors(FAnchors(Index / 4.f, 0.75f, (Index + 1) / 4.f, 1.f));
+			if (bLegacyOnly)
+			{
+				Slot->SetAnchors(FAnchors((Index % 2) / 2.f, (Index / 2) / 2.f, (Index % 2 + 1) / 2.f, (Index / 2 + 1) / 2.f));
+			}
 			Slot->SetOffsets(FMargin(0.f));
 		}
 		Channel->bOpenAccepted = Player->OpenUrl(Url);
@@ -105,15 +111,15 @@ void UDTCctvLegacyHarnessSubsystem::StartPlayers()
 	bStarted = true;
 }
 
-void UDTCctvLegacyHarnessSubsystem::WriteSamples(double Elapsed)
+void UDTCctvLegacyHarnessSubsystem::WriteSamples(double Elapsed, bool bShutdown)
 {
 	for (int32 Index = 0; Index < Channels.Num(); ++Index)
 	{
 		const FDTCctvLegacyChannel& Channel = *Channels[Index];
 		const UMediaPlayer* Player = Players[Index];
-		const FString Line = FString::Printf(TEXT("%.3f,%d,%s,%d,%d,%.6f,%lld,%lld,%.6f,%d,%d,%d\n"),
+		const FString Line = FString::Printf(TEXT("%.3f,%d,%s,%d,%d,%.6f,%lld,%lld,%.6f,%d,%d,%d,%s\n"),
 			Elapsed, Index, *Player->GetPlayerName().ToString(), Player->IsPlaying(), Player->HasError(), Player->GetTime().GetTotalSeconds(),
-			Channel.Frames, Channel.TimestampChanges, FTimespan(Channel.LastTicks).GetTotalSeconds(), Channel.Dimensions.X, Channel.Dimensions.Y, Channel.bOpenAccepted);
+			Channel.Frames, Channel.TimestampChanges, FTimespan(Channel.LastTicks).GetTotalSeconds(), Channel.Dimensions.X, Channel.Dimensions.Y, Channel.bOpenAccepted, bShutdown ? TEXT("shutdown") : TEXT("running"));
 		FFileHelper::SaveStringToFile(Line, *CsvPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM, &IFileManager::Get(), FILEWRITE_Append);
 	}
 }
@@ -148,13 +154,20 @@ void UDTCctvLegacyHarnessSubsystem::Tick(float DeltaTime)
 		WriteSamples(Elapsed);
 		LastSampleSeconds = Elapsed;
 	}
+	if (bLegacyOnly && Elapsed >= DurationSeconds)
+	{
+		WriteSamples(Elapsed);
+		bFinalSampleWritten = true;
+		bEnabled = false;
+		FPlatformMisc::RequestExit(false);
+	}
 }
 
 void UDTCctvLegacyHarnessSubsystem::Deinitialize()
 {
-	if (bStarted)
+	if (bStarted && !bFinalSampleWritten)
 	{
-		WriteSamples(FPlatformTime::Seconds() - StartSeconds);
+		WriteSamples(FPlatformTime::Seconds() - StartSeconds, true);
 	}
 	bEnabled = false;
 	for (UMediaPlayer* Player : Players)

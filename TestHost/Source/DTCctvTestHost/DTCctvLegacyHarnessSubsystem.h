@@ -27,14 +27,17 @@ public:
 
 private:
 	void StartPlayers();
-	void WriteSamples(double Elapsed);
+	void WriteSamples(double Elapsed, bool bShutdown = false);
 	bool bEnabled = false;
 	bool bStarted = false;
+	bool bLegacyOnly = false;
+	bool bFinalSampleWritten = false;
 	int32 Count = 0;
 	FString Url;
 	FString CsvPath;
 	double StartSeconds = 0.0;
 	double LastSampleSeconds = 0.0;
+	double DurationSeconds = 135.0;
 	TArray<TSharedPtr<FDTCctvLegacyChannel>> Channels;
 
 	UPROPERTY(Transient)

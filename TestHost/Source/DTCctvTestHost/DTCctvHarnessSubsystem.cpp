@@ -93,6 +93,10 @@ void UDTCctvHarnessSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	Super::Initialize(Collection);
 
 	const TCHAR* CommandLine = FCommandLine::Get();
+	if (FParse::Param(CommandLine, TEXT("CctvLegacyOnly")))
+	{
+		return;
+	}
 	FString UrlEnvironment;
 	if (FParse::Value(CommandLine, TEXT("-CctvUrlEnv="), UrlEnvironment))
 	{
