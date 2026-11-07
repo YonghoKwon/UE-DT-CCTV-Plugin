@@ -11,3 +11,4 @@
 - Linux 파일은 심볼릭 링크 없이 SONAME 이름(`libavcodec.so.62` 등)으로 저장합니다.
 - `libdtcctv_avcodec.so` 등 `libdtcctv_*.so`는 `INPUT(SONAME)` 텍스트 링커 스크립트입니다. UE 5.3 UBT가 `-ldtcctv_avcodec` 등 고유 링크 이름으로 변환하게 하여 기존 플러그인의 `-lavcodec` 검색과 분리합니다. 일반 이름의 `libavcodec.so` 등은 이 디렉터리에 두지 않습니다. 바이너리 버전과 SONAME은 바꾸지 않으며 실행 시 SONAME 파일 5개를 게임 실행 파일 옆에 스테이징합니다.
 - 바이너리는 Git LFS로 관리합니다. 클론 후 `git lfs pull`이 필요할 수 있습니다.
+- 고유 링크 이름은 라이브러리 검색만 분리합니다. CCTV-01V에서 monolithic 실행 파일의 공통 C 함수 import는 신·구 간에 합쳐져 동시 재생이 실패했습니다. 실행 ABI 분리 완료를 뜻하지 않으며 [공존 검증 기록](../../../docs/FFMPEG_MEDIA_COEXISTENCE.md)을 확인해야 합니다.

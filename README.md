@@ -151,6 +151,8 @@ Windows 11에서 해당 프로세스의 타이머 요청을 존중하도록 비�
 2. `.uproject`의 DTCctv 활성화와 호출 모듈 의존성을 추가하고, DTCore 로그·UMG 수명·배포 파일을 확인합니다.
 3. 기본값에서 시작합니다. FFMPEGMedia가 설치된 경우 Linux는 해결 전까지 둘 중 하나만 활성화하며 실제 Pixel Streaming 동시 부하는 별도 검증합니다.
 
+기존 FFMPEGMedia와의 CCTV-01V 공존 빌드·패키징은 Windows·Linux 모두 성공했습니다. 기존 플레이어를 열지 않은 DTCctv 16채널도 통과했지만, 실제 4+12 동시 재생은 두 플랫폼 모두 신·구 FFmpeg 함수 import 혼합과 구 avformat 충돌로 **FAIL**입니다. 링크 성공을 안전한 동시 재생으로 확대하지 않습니다. [원인과 검증 범위](docs/FFMPEG_MEDIA_COEXISTENCE.md)를 확인하십시오.
+
 설치·LFS 규칙·설정·점검 순서는 [운영 프로젝트 적용 안내서](docs/INTEGRATION_GUIDE.md)를 따르십시오.
 
 ## Linux 드라이버와 서버 점검

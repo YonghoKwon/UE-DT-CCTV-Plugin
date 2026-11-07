@@ -26,7 +26,7 @@ DTCore 기반 UE 5.3 프로젝트에 CCTV 화면을 붙이는 개발자를 위�
    ```
 
 2. DLL·LIB·버전 접미사 `.so.*`가 `version https://git-lfs.github.com/spec/v1`로 시작하는 포인터 텍스트라면 준비가 끝나지 않은 상태입니다. 포인터는 라이브러리가 아니므로 링크·실행에 사용할 수 없습니다.
-3. Linux의 **무버전 `.so`는 정상적인 짧은 텍스트**입니다. 예를 들어 `libavcodec.so`의 내용은 `INPUT(libavcodec.so.62)`입니다. 이것을 LFS 포인터나 깨진 심볼릭 링크로 판단해 고치지 마십시오. 대응하는 `.so.62`는 실제 ELF 바이너리여야 합니다.
+3. Linux의 **`libdtcctv_*.so`는 정상적인 짧은 텍스트**입니다. 예를 들어 `libdtcctv_avcodec.so`의 내용은 `INPUT(libavcodec.so.62)`입니다. 이것을 LFS 포인터나 깨진 심볼릭 링크로 판단해 고치지 마십시오. 대응하는 `.so.62`는 실제 ELF 바이너리여야 합니다. 이전의 일반 이름 `libavcodec.so` 등을 이 폴더에 남기면 기존 플러그인의 링크 검색을 가로챌 수 있으므로 새 파일 구성을 그대로 사용합니다.
 
 ### 2.2 복사 설치를 기본으로 사용
 
@@ -75,7 +75,7 @@ Plugins/DTCctv/Source/ThirdParty/DTCctvFFmpeg/Win64/lib/*.lib filter=lfs diff=lf
 Plugins/DTCctv/Source/ThirdParty/DTCctvFFmpeg/Linux/lib/*.so.* filter=lfs diff=lfs merge=lfs -text
 ```
 
-`git check-attr filter -- Plugins/DTCctv/Source/ThirdParty/DTCctvFFmpeg/Win64/bin/avcodec-62.dll`로 실제 적용을 확인합니다. 서브모듈 내부 파일은 부모 저장소가 직접 추적하는 파일과 구분합니다. Linux의 무버전 `.so` 링커 스크립트와 버전 파일의 이름·내용·대응 관계는 바꾸지 않습니다.
+`git check-attr filter -- Plugins/DTCctv/Source/ThirdParty/DTCctvFFmpeg/Win64/bin/avcodec-62.dll`로 실제 적용을 확인합니다. 서브모듈 내부 파일은 부모 저장소가 직접 추적하는 파일과 구분합니다. Linux의 고유 이름 `libdtcctv_*.so` 링커 스크립트와 버전 파일의 이름·내용·대응 관계는 바꾸지 않습니다.
 
 ## 3. DTCore 로그 연동
 
@@ -292,7 +292,7 @@ python3 TestHost/Scripts/cctv_check_result.py '<실제 보고서 경로>/report.
    avcodec-62.dll  avformat-62.dll  avutil-60.dll  swscale-9.dll  swresample-6.dll
    ```
 
-3. Linux 패키지의 게임 실행 바이너리 옆에 다음 **5개 SONAME 파일**이 있어야 합니다. 설치 원본은 `Plugins/DTCctv/Source/ThirdParty/DTCctvFFmpeg/Linux/lib/`입니다. 무버전 `.so`는 빌드용 링커 스크립트이고 버전 파일이 런타임에 필요합니다. 파일 존재뿐 아니라 원본과의 해시·실제 로드·디코딩을 확인합니다.
+3. Linux 패키지의 게임 실행 바이너리 옆에 다음 **5개 SONAME 파일**이 있어야 합니다. 설치 원본은 `Plugins/DTCctv/Source/ThirdParty/DTCctvFFmpeg/Linux/lib/`입니다. `libdtcctv_*.so`는 빌드용 링커 스크립트이고 버전 파일이 런타임에 필요합니다. 파일 존재뿐 아니라 원본과의 해시·실제 로드·디코딩을 확인합니다.
 
    ```text
    libavcodec.so.62  libavformat.so.62  libavutil.so.60  libswscale.so.9  libswresample.so.6
@@ -313,13 +313,13 @@ python3 TestHost/Scripts/cctv_check_result.py '<실제 보고서 경로>/report.
 
 | 조건 | 확인된 결과와 적용 주의 |
 |---|---|
-| Windows, 기존 플러그인을 켜 두고 사용하지 않음 | main `819e004`와 설치 공존 시 DTCctv 16채널 재생 확인. 기존 플러그인의 완전한 로드·자체 재생 정상까지 뜻하지 않음 |
+| Windows, 기존 플러그인을 켜 두고 사용하지 않음 | main `819e004`와 설치 공존 시 DTCctv 16채널 재생 확인. CCTV-01V의 새 패키지에서도 확인했으나 기존 플레이어와의 동시 재생 성공을 뜻하지 않음 |
 | Windows의 구 `avdevice-58.dll` 오류 126 | DTCctv 없이도 같은 오류 재현. 기존 제공본·의존 환경 문제로 구분하며 신 FFmpeg DLL을 덮어써 해결하지 않음 |
-| Linux, 둘 다 활성화 | 같은 `-lavcodec` 등 링크 이름과 검색 경로의 선택 충돌로 구 API 미해결 심볼 발생·패키징 링크 실패. 기존 플러그인 단독 링크는 성공. 해결 전까지 Linux 대상에서는 둘 중 하나만 활성화 |
-| 두 플러그인 동시 영상 재생 | 미검증 |
+| Linux, 둘 다 활성화 | 고유 `-ldtcctv_*` 링크 이름으로 검색 충돌을 수정해 빌드·패키징은 성공. 기존 플레이어 미사용 시 DTCctv 16채널 SW·자동 디코딩 확인. 그러나 실행 심볼 분리는 실패했으므로 안전한 공존으로 수용하지 않음 |
+| 두 플러그인 동시 영상 재생 | CCTV-01V에서 Windows·Linux 모두 4+12 열기 직후 구 avformat 경로에서 충돌. 공통 API는 신 계열, 구 전용 API는 구 계열로 결합되는 ABI 혼합 확인. 120초 시험 미완료·FAIL |
 | `feature/dt-project-sync`의 `ea78883` | 철자 오타 수정 후에도 빌드 실패. 공존 시험은 main `819e004` 사용 |
 
-상세 범위와 R15 단독 대조는 [공존 재시험 기록](FFMPEG_MEDIA_COEXISTENCE.md)을 참조하십시오. Windows의 성공을 Linux의 성공으로 확대하지 않습니다.
+상세 범위와 R15 단독 대조는 [공존 검증 기록](FFMPEG_MEDIA_COEXISTENCE.md)을 참조하십시오. DLL·SONAME 이름이 다르다는 사실만으로 호출 분리가 보장되지 않습니다. 링크 성공이나 기존 미사용 재생 성공을 동시 재생 성공으로 확대하지 않습니다. Linux에서 둘 중 하나만 활성화하는 안내는 실행 심볼 분리까지 해결될 때까지 유지합니다. Windows도 기존 플레이어 동시 재생은 해결되지 않았습니다.
 
 **Linux에서만 기존 플러그인을 제외하는 설정 예시 — 운영 조합 미검증:** UE 5.3 엔진 소스의 `PluginReferenceDescriptor.cs`는 `.uproject` 플러그인 참조의 `PlatformDenyList`·`PlatformAllowList`를 읽고 플랫폼별 활성화를 판단합니다. 기존 FFMPEGMedia 참조에 다음처럼 `PlatformDenyList`를 둘 수 있습니다. 이 필드의 존재를 확인한 것이며, 실제 운영 프로젝트의 전체 빌드·패키징 성공을 검증한 예시는 아닙니다.
 
@@ -328,6 +328,8 @@ python3 TestHost/Scripts/cctv_check_result.py '<실제 보고서 경로>/report.
 ```
 
 이 경우 **운영 코드·다른 모듈·타깃이 Linux에서 FFMPEGMedia 모듈·타입을 참조하지 않아야 합니다.** `.Build.cs`의 의존성, include·호출, 기존 미디어 에셋 사용처까지 검토해야 합니다. 필드 하나만 추가하면 모든 참조가 자동으로 사라진다고 가정하지 않습니다. 이 안내서에서는 기존 플러그인 원본·빌드 규칙·FFmpeg를 수정하지 않습니다.
+
+나중에 기존 플러그인을 제거할 때는 **운영 코드·미디어 에셋의 참조 제거 → `.uproject`의 FFMPEGMedia 항목 제거 → 플러그인 폴더 제거 → Windows·Linux 재빌드·패키징·점검** 순서로 진행합니다. 이 안내서는 운영 프로젝트의 실제 제거를 수행하지 않았습니다.
 
 ## 11. 문제 해결
 
@@ -346,7 +348,8 @@ python3 TestHost/Scripts/cctv_check_result.py '<실제 보고서 경로>/report.
 | 채널 증가 후 FPS 저하 | 채널별 DecodeFps·DisplayFps, PacketsDropped·FramesSuperseded, CPU·NVDEC와 서브 주소 확인. 기준을 낮춰 PASS로 바꾸지 않음 |
 | 다른 창 뒤에서 표시 FPS 저하 | 포그라운드 비교 후 Windows 11 타이머 옵션을 선택·재검증. [창 상태 진단](WINDOW_STATE_DIAGNOSTICS.md) 참조 |
 | DTCore 로그가 없음 | Editor인지, 빌드 감지 경로·비활성화·서브시스템 준비 상태·해당 DTCore의 실제 디렉터리 확인 |
-| FFmpeg 로드·Linux 링크 실패 | LFS 포인터, 누락된 SONAME/DLL, `.so` 링커 스크립트 대응 관계와 기존 FFMPEGMedia 공존 여부 확인 |
+| FFmpeg 로드·Linux 링크 실패 | LFS 포인터, 누락된 SONAME/DLL, `libdtcctv_*.so` 링커 스크립트 대응 관계와 기존 FFMPEGMedia 공존 여부 확인 |
+| 두 플레이어를 열자 구 avformat에서 충돌 | 신·구 함수 import 혼합 여부 확인. 현재 공존 빌드 성공만으로 동시 재생을 수용하지 않으며 기존 플러그인을 임의 수정하지 않음 |
 
 정상 연결의 정기 재시작을 장애 대응책으로 넣지 않습니다. 화면을 닫을 때는 `Stop`/`CloseStream`으로 의도적으로 닫습니다.
 
@@ -356,7 +359,7 @@ python3 TestHost/Scripts/cctv_check_result.py '<실제 보고서 경로>/report.
 2. Pixel Streaming의 실제 송출·인코딩과 CCTV 재생 동시 부하.
 3. 실제 카메라·원격지 TCP의 지연·지터·손실·접근 정책과 카메라별 동시 연결 제한. 로컬 반복 파일의 채널 수를 그대로 보증값으로 사용하지 않음.
 4. 실제 운영 화면 수명에서 Close/Open 장시간 자원 관찰. 기존 자원 변화의 사용자 수용은 운영 장시간 관찰 완료를 뜻하지 않음.
-5. 운영 프로젝트별 설치·DTCore 패키지 로그, Windows 10 실제 타이머 옵션 동작, FFMPEGMedia 플랫폼 제외 예시와 동시 재생 검증.
+5. 운영 프로젝트별 설치·DTCore 패키지 로그, Windows 10 실제 타이머 옵션 동작, FFMPEGMedia 플랫폼 제외 예시. 두 플레이어 동시 재생은 현재 FAIL이므로 ABI 분리 수정 후 재검증이 필요합니다.
 
 ## 13. 적용 체크리스트
 
