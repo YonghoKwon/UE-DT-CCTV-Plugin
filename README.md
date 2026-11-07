@@ -2,6 +2,8 @@
 
 UE 5.3 프로젝트에서 RTSP CCTV를 표시하는 Windows·Linux용 C++ 플러그인입니다. DTCore가 없는 프로젝트에서도 동작하며, DTCore가 있는 패키지에서는 선택적으로 로그를 연동합니다. 플러그인 안에 블루프린트·맵·위젯 에셋을 넣지 않습니다. 오디오는 재생하지 않고 SDP 트랙 정보만 조회합니다.
 
+[운영 프로젝트 적용 안내서](docs/INTEGRATION_GUIDE.md) — 설치·DTCore 로그·UMG·배포 점검·기존 FFMPEGMedia 공존 주의사항.
+
 CCTV-01F의 최종 C++는 `95cd411`입니다. Editor·전체 단위 15개·새 Win64/Linux 패키징을 완료했고, 소비자 정지 시 역압이 남는 결함을 수정했습니다. GT 3/5/10초와 렌더 정체, 지연·버스트 회귀, Windows 패키지·디코딩/로드 공존·UI·장애·소크는 통과했습니다. 100회 자원 비증가 측정의 원시 판정은 FAIL이며, GPU 약+0.12MiB·핸들 최대1692→1696은 2026-11-06 사용자 결정으로 **수용됨, 운영에서 장시간 관찰 권장**입니다. 해당 항목의 추가 수정은 수행하지 않습니다. Linux Vulkan 렌더링은 ENV_BLOCKED입니다.
 
 ## 코덱별 검증(CCTV-01G)
@@ -145,23 +147,11 @@ Windows 11에서 해당 프로세스의 타이머 요청을 존중하도록 비�
 
 ## 프로젝트에 적용
 
-1. Git LFS가 설치된 환경에서 저장소를 받고 `git lfs pull`로 바이너리 원본을 준비합니다. DLL·LIB·버전 접미사 `.so`가 작은 LFS 포인터 텍스트인 상태로 빌드하지 않습니다.
-2. 운영 프로젝트의 `Plugins/DTCctv/`에 `DTCctv.uplugin`, `Source/`, `Shaders/`, 이 README를 복사합니다. `Source/ThirdParty/DTCctvFFmpeg/LICENSE.txt`와 출처 문서도 함께 유지합니다. `TestHost/`, `Binaries/`, `Intermediate/`, `Saved/`, `.git/`는 운영 프로젝트로 복사하지 않습니다.
-3. 운영 프로젝트의 `.uproject`에 다음 항목을 추가합니다. 프로젝트에 이미 `Plugins` 배열이 있으면 그 배열에 합칩니다.
+1. `git lfs pull`로 원본을 준비하고 필수 소스·셰이더·라이선스를 `Plugins/DTCctv/`에 복사합니다. TestHost와 시험 산출물은 제외합니다.
+2. `.uproject`의 DTCctv 활성화와 호출 모듈 의존성을 추가하고, DTCore 로그·UMG 수명·배포 파일을 확인합니다.
+3. 기본값에서 시작합니다. FFMPEGMedia가 설치된 경우 Linux는 해결 전까지 둘 중 하나만 활성화하며 실제 Pixel Streaming 동시 부하는 별도 검증합니다.
 
-```json
-"Plugins": [
-  { "Name": "DTCctv", "Enabled": true }
-]
-```
-
-4. C++ 호출 모듈의 `.Build.cs`에 `DTCctv`를 의존성으로 추가하고 해당 프로젝트를 빌드합니다. 플러그인의 FFmpeg 헤더나 외부 모듈을 운영 코드에서 직접 포함할 필요는 없습니다.
-
-Windows는 FFmpeg DLL 5개, Linux는 SONAME 파일 5개를 실행 바이너리 옆에 스테이징합니다. Linux의 확장자 `.so` 파일은 버전 파일을 가리키는 텍스트 링커 스크립트입니다. 이를 바이너리로 교체하거나 버전 라이브러리를 빼면 안 됩니다. 자세한 버전·LGPL 정보는 [동봉 FFmpeg 설명](Source/ThirdParty/DTCctvFFmpeg/README.md)에 있습니다.
-
-**기존 FFMPEGMedia와의 설치 공존은 플랫폼별로 결과가 다릅니다.** CCTV-01I 재시험에서 `main(819e004)`을 활성화하고 사용하지 않는 Windows 조건의 DTCctv 16채널은 표시 59.9398fps로 통과했습니다. 구 `avdevice-58.dll` 로드 실패는 별도로 남아 있습니다. Linux 공존 패키징은 구 FFmpeg API 미해결 심볼로 실패했습니다. R15 보충 확인에서는 기존 플러그인 단독 Linux 링크가 통과했으며, `.so` 24개가 실제 ELF임을 확인했습니다. Windows의 구 avdevice 오류 126은 DTCctv 없이도 재현됐습니다. 운영본 동기화 브랜치 `feature/dt-project-sync(ea78883)`는 철자 오타 5줄 수정 후에도 오디오 패킷 상수 미선언으로 빌드에 실패했습니다. 자세한 범위와 근거는 [공존 재시험 기록](docs/FFMPEG_MEDIA_COEXISTENCE.md)을 참조하십시오.
-
-Pixel Streaming을 활성화한 Windows·Linux 단독 빌드의 마운트와 16채널 재생을 확인했습니다. 판정 범위는 **"플러그인 로드 공존만 확인, 실제 스트리밍 동시 부하는 미검증"**입니다. Linux 단독 시험은 nullrhi 소프트웨어 디코딩 범위이며, 위 FFMPEGMedia 공존 빌드 실패와 구분합니다.
+설치·LFS 규칙·설정·점검 순서는 [운영 프로젝트 적용 안내서](docs/INTEGRATION_GUIDE.md)를 따르십시오.
 
 ## Linux 드라이버와 서버 점검
 
