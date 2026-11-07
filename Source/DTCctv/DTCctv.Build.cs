@@ -10,6 +10,10 @@ public class DTCctv : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "UMG", "DeveloperSettings", "SlateCore", "Slate" });
 		PrivateDependencyModuleNames.AddRange(new string[] { "RenderCore", "RHI", "DTCctvRender", "DTCctvFFmpeg" });
+		if (Target.Platform == UnrealTargetPlatform.Linux)
+		{
+			PublicSystemLibraries.Add("dl");
+		}
 		bool WithDTCore = HasDTCore(Target);
 		PublicDefinitions.Add("DTCCTV_WITH_DTCORE=" + (WithDTCore ? "1" : "0"));
 		if (WithDTCore)

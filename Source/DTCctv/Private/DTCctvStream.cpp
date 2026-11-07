@@ -1,4 +1,5 @@
 #include "DTCctvStream.h"
+#include "DTCctvFFmpegApi.h"
 
 #include "DTCctvLog.h"
 #include "DTCctvPolicies.h"
@@ -97,6 +98,13 @@ void UDTCctvStream::Open(const FDTCctvStreamConfig& InConfig)
 		return;
 	}
 
+	if (!DTCctvFFmpegReady())
+	{
+		Accumulated.LastError = TEXT("FFmpeg 로드 준비 실패: ") + DTCctvFFmpegLoadError();
+		Accumulated.LastErrorCode = AVERROR(ENOENT);
+		WriteEventLog(Accumulated.LastError, ELogVerbosity::Error);
+		return;
+	}
 	CreateTextureIfNeeded();
 	StartSession(false);
 }

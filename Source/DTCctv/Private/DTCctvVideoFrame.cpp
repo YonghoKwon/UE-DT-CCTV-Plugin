@@ -1,4 +1,5 @@
 #include "DTCctvVideoFrame.h"
+#include "DTCctvFFmpegApi.h"
 
 #include "DTCctvFFmpegInclude.h"
 #include "HAL/PlatformTime.h"
@@ -8,11 +9,13 @@ FDTCctvVideoFrame::FDTCctvVideoFrame(AVFrame* InFrame, FIntPoint InSourceSize, d
 	, SourceSize(InSourceSize)
 	, DecodedSeconds(InDecodedSeconds > 0.0 ? InDecodedSeconds : FPlatformTime::Seconds())
 {
+	DTCctvRetainFFmpegOwner();
 }
 
 FDTCctvVideoFrame::~FDTCctvVideoFrame()
 {
-	av_frame_free(&Frame);
+	DTCctvFFmpeg().av_frame_free(&Frame);
+	DTCctvReleaseFFmpegOwner();
 }
 
 FIntPoint FDTCctvVideoFrame::GetSize() const

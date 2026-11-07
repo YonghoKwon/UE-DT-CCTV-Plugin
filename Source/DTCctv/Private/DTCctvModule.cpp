@@ -1,4 +1,5 @@
 #include "DTCctvFFmpegInclude.h"
+#include "DTCctvFFmpegApi.h"
 #include "DTCctvHwDevice.h"
 #include "DTCctvLog.h"
 #include "DTCctvPolicies.h"
@@ -11,6 +12,7 @@
 #include <atomic>
 #include <cstdarg>
 #include <cstdio>
+#include "RenderingThread.h"
 
 #if DTCCTV_WITH_DTCORE && !WITH_EDITOR
 #include "Core/DxLogSubsystem.h"
@@ -59,7 +61,7 @@ namespace
 
 		char Line[1024] = { 0 };
 		int PrintPrefix = 1;
-		av_log_format_line2(Avcl, Level, Format, Args, Line, sizeof(Line), &PrintPrefix);
+		DTCctvFFmpeg().av_log_format_line2(Avcl, Level, Format, Args, Line, sizeof(Line), &PrintPrefix);
 		FString Message = DTCctvMaskUrlCredentials(UTF8_TO_TCHAR(Line));
 		Message.TrimEndInline();
 		DTCctvLogEvent(DTCctvCurrentLogContext(), TEXT("FFmpeg: ") + Message);
@@ -80,10 +82,15 @@ public:
 		// 모듈 시작 때는 GameInstance가 없으므로 DTCore에는 준비된 뒤 한 줄 남긴다.
 		GameInstanceStartedHandle = FWorldDelegates::OnStartGameInstance.AddRaw(this, &FDTCctvModule::LogTimerPolicyToDTCore);
 #endif
-		av_log_set_level(AV_LOG_VERBOSE);
-		av_log_set_callback(&FFmpegLogCallback);
-		avformat_network_init();
-		UE_LOG(LogDTCctv, Log, TEXT("FFmpeg %s"), UTF8_TO_TCHAR(av_version_info()));
+		if (!DTCctvInitializeFFmpeg())
+		{
+			DTCctvLogEvent(FDTCctvLogContext(), TEXT("FFmpeg 로드 준비 실패: ") + DTCctvFFmpegLoadError(), ELogVerbosity::Error);
+			return;
+		}
+		DTCctvFFmpeg().av_log_set_level(AV_LOG_VERBOSE);
+		DTCctvFFmpeg().av_log_set_callback(&FFmpegLogCallback);
+		DTCctvFFmpeg().avformat_network_init();
+		UE_LOG(LogDTCctv, Log, TEXT("FFmpeg %s"), UTF8_TO_TCHAR(DTCctvFFmpeg().av_version_info()));
 	}
 
 	virtual void ShutdownModule() override
@@ -93,10 +100,18 @@ public:
 #endif
 		TimerPolicy.Shutdown();
 		FDTCctvSession::ShutdownRetired();
+		FlushRenderingCommands();
 		DTCctvHwDevice::ReleaseAll();
+		if (DTCctvFFmpegReady())
+		{
+			DTCctvFFmpeg().av_log_set_callback(DTCctvFFmpeg().av_log_default_callback);
+			if (DTCctvFFmpegOwners() == 0)
+			{
+				DTCctvFFmpeg().avformat_network_deinit();
+			}
+		}
 		DTCctvShutdownLogSink();
-		avformat_network_deinit();
-		av_log_set_callback(&av_log_default_callback);
+		DTCctvShutdownFFmpeg();
 	}
 
 private:
@@ -113,6 +128,10 @@ private:
 			if (UDxLogSubsystem* Subsystem = GameInstance->GetSubsystem<UDxLogSubsystem>())
 			{
 				Subsystem->WriteLog(TEXT("[DTCctv] ") + TimerPolicyMessage, false);
+				if (!DTCctvFFmpegReady())
+				{
+					Subsystem->WriteLog(TEXT("[DTCctv] FFmpeg 로드 준비 실패: ") + DTCctvFFmpegLoadError(), false);
+				}
 			}
 		}
 	}

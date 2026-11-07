@@ -1,4 +1,5 @@
 #include "Misc/AutomationTest.h"
+#include "DTCctvFFmpegApi.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -52,11 +53,11 @@ namespace
 {
 	void PushPacket(FDTCctvPacketQueue& Queue, bool bKeyFrame)
 	{
-		AVPacket* Packet = av_packet_alloc();
-		av_new_packet(Packet, 8);
+		AVPacket* Packet = DTCctvFFmpeg().av_packet_alloc();
+		DTCctvFFmpeg().av_new_packet(Packet, 8);
 		Packet->flags = bKeyFrame ? AV_PKT_FLAG_KEY : 0;
 		Queue.Push(Packet);
-		av_packet_free(&Packet);
+		DTCctvFFmpeg().av_packet_free(&Packet);
 	}
 }
 
@@ -85,7 +86,7 @@ bool FDTCctvPacketQueueTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("꺼내기"), Queue.Pop(Packet, bDiscontinuity));
 	TestTrue(TEXT("불연속 알림"), bDiscontinuity);
 	TestTrue(TEXT("키프레임"), (Packet->flags & AV_PKT_FLAG_KEY) != 0);
-	av_packet_free(&Packet);
+	DTCctvFFmpeg().av_packet_free(&Packet);
 
 	Queue.Abort();
 	TestFalse(TEXT("중단 후 대기 안 함"), Queue.Pop(Packet, bDiscontinuity));
@@ -134,7 +135,7 @@ bool FDTCctvColorTest::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDTCctvFrameMetadataTest, "DTCctv.Policies.FrameMetadata", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::SmokeFilter)
 bool FDTCctvFrameMetadataTest::RunTest(const FString& Parameters)
 {
-	AVFrame* Frame = av_frame_alloc();
+	AVFrame* Frame = DTCctvFFmpeg().av_frame_alloc();
 	if (!TestNotNull(TEXT("프레임 할당"), Frame))
 	{
 		return false;
@@ -179,7 +180,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDTCctvHwFallbackTest, "DTCctv.Policies.HwForma
 bool FDTCctvHwFallbackTest::RunTest(const FString& Parameters)
 {
 	FDTCctvSession Session{ FDTCctvSessionParams() };
-	AVCodecContext* Context = avcodec_alloc_context3(nullptr);
+	AVCodecContext* Context = DTCctvFFmpeg().avcodec_alloc_context3(nullptr);
 	if (!TestNotNull(TEXT("코덱 문맥 할당"), Context))
 	{
 		return false;
@@ -203,7 +204,7 @@ bool FDTCctvHwFallbackTest::RunTest(const FString& Parameters)
 	const AVPixelFormat EmptyFormats[] = { AV_PIX_FMT_NONE };
 	TestTrue(TEXT("사용 가능한 형식이 없으면 실패 반환"), FDTCctvSession::GetFormatCallback(Context, EmptyFormats) == AV_PIX_FMT_NONE);
 	TestTrue(TEXT("진짜 협상 실패는 읽기 스레드에 전달"), Session.bHwFailed.load());
-	avcodec_free_context(&Context);
+	DTCctvFFmpeg().avcodec_free_context(&Context);
 	return true;
 }
 
@@ -211,7 +212,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDTCctvFrameBurstTest, "DTCctv.Policies.FrameBu
 bool FDTCctvFrameBurstTest::RunTest(const FString& Parameters)
 {
 	FDTCctvSession Session{ FDTCctvSessionParams() };
-	AVFrame* Frame = av_frame_alloc();
+	AVFrame* Frame = DTCctvFFmpeg().av_frame_alloc();
 	if (!TestNotNull(TEXT("프레임 할당"), Frame))
 	{
 		return false;
@@ -219,16 +220,16 @@ bool FDTCctvFrameBurstTest::RunTest(const FString& Parameters)
 	Frame->format = AV_PIX_FMT_YUV420P;
 	Frame->width = 16;
 	Frame->height = 16;
-	if (av_frame_get_buffer(Frame, 32) < 0)
+	if (DTCctvFFmpeg().av_frame_get_buffer(Frame, 32) < 0)
 	{
-		av_frame_free(&Frame);
+		DTCctvFFmpeg().av_frame_free(&Frame);
 		return false;
 	}
 	for (int32 Index = 0; Index < 8; ++Index)
 	{
-		if (av_frame_make_writable(Frame) < 0)
+		if (DTCctvFFmpeg().av_frame_make_writable(Frame) < 0)
 		{
-			av_frame_free(&Frame);
+			DTCctvFFmpeg().av_frame_free(&Frame);
 			return false;
 		}
 		Frame->data[0][0] = static_cast<uint8>(Index);
@@ -245,7 +246,7 @@ bool FDTCctvFrameBurstTest::RunTest(const FString& Parameters)
 		FDTCctvVideoFramePtr Output = Session.TakeFrame();
 		if (!TestTrue(TEXT("대기 프레임 존재"), Output.IsValid()))
 		{
-			av_frame_free(&Frame);
+			DTCctvFFmpeg().av_frame_free(&Frame);
 			return false;
 		}
 		TestEqual(TEXT("FIFO 프레임 내용"), Output->GetPlanes().Data[0][0], static_cast<uint8>(Index));
@@ -259,7 +260,7 @@ bool FDTCctvFrameBurstTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("상한 초과는 기존 이름으로 집계"), Stats.FramesSuperseded, int64(1));
 	// FFmpeg의 writable 복사는 처음 할당과 버퍼 패딩 크기가 다를 수 있다.
 	TestEqual(TEXT("대체 후8개 실제 버퍼 크기를 정확히 집계"), Stats.QueuedFrameBytes, int64(8) * static_cast<int64>(Frame->buf[0]->size));
-	av_frame_free(&Frame);
+	DTCctvFFmpeg().av_frame_free(&Frame);
 	return true;
 }
 
@@ -321,7 +322,7 @@ bool FDTCctvPreparedSizeTest::RunTest(const FString& Parameters)
 {
 	FDTCctvSession Session{ FDTCctvSessionParams() };
 	Session.SetDesiredOutputSize(FIntPoint(480, 270));
-	AVFrame* Frame = av_frame_alloc();
+	AVFrame* Frame = DTCctvFFmpeg().av_frame_alloc();
 	if (!TestNotNull(TEXT("원본 프레임 할당"), Frame))
 	{
 		return false;
@@ -329,9 +330,9 @@ bool FDTCctvPreparedSizeTest::RunTest(const FString& Parameters)
 	Frame->format = AV_PIX_FMT_YUV420P;
 	Frame->width = 1920;
 	Frame->height = 1440;
-	if (av_frame_get_buffer(Frame, 32) < 0)
+	if (DTCctvFFmpeg().av_frame_get_buffer(Frame, 32) < 0)
 	{
-		av_frame_free(&Frame);
+		DTCctvFFmpeg().av_frame_free(&Frame);
 		return false;
 	}
 	Session.OutputFrame(Frame);
@@ -345,7 +346,7 @@ bool FDTCctvPreparedSizeTest::RunTest(const FString& Parameters)
 	FDTCctvStreamStats Stats;
 	Session.FillStats(Stats);
 	TestEqual(TEXT("소비 후 대기 버퍼 해제"), Stats.QueuedFrameBytes, int64(0));
-	av_frame_free(&Frame);
+	DTCctvFFmpeg().av_frame_free(&Frame);
 	return true;
 }
 
@@ -355,7 +356,7 @@ bool FDTCctvFrameMemoryTest::RunTest(const FString& Parameters)
 	for (const FIntPoint Size : { FIntPoint(1920, 1080), FIntPoint(3840, 2160) })
 	{
 		FDTCctvSession Session{ FDTCctvSessionParams() };
-		AVFrame* Frame = av_frame_alloc();
+		AVFrame* Frame = DTCctvFFmpeg().av_frame_alloc();
 		if (!TestNotNull(TEXT("메모리 상한 시험 프레임"), Frame))
 		{
 			return false;
@@ -363,9 +364,9 @@ bool FDTCctvFrameMemoryTest::RunTest(const FString& Parameters)
 		Frame->format = AV_PIX_FMT_YUV420P;
 		Frame->width = Size.X;
 		Frame->height = Size.Y;
-		if (av_frame_get_buffer(Frame, 32) < 0)
+		if (DTCctvFFmpeg().av_frame_get_buffer(Frame, 32) < 0)
 		{
-			av_frame_free(&Frame);
+			DTCctvFFmpeg().av_frame_free(&Frame);
 			return false;
 		}
 		const int32 ExpectedFrames = Size.X == 1920 ? 8 : 2;
@@ -378,7 +379,7 @@ bool FDTCctvFrameMemoryTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("큰 프레임은 바이트 예산으로 먼저 제한"), Stats.QueuedFrames, ExpectedFrames);
 		TestTrue(TEXT("HD·4K 대기 버퍼24MiB 상한 유지"), Stats.QueuedFrameBytes <= 24 * 1024 * 1024);
 		TestEqual(TEXT("예산 초과도 기존 대체 집계에 포함"), Stats.FramesSuperseded, int64(1));
-		av_frame_free(&Frame);
+		DTCctvFFmpeg().av_frame_free(&Frame);
 	}
 	return true;
 }
@@ -387,41 +388,41 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDTCctvFrameBackpressureTest, "DTCctv.Policies.
 bool FDTCctvFrameBackpressureTest::RunTest(const FString& Parameters)
 {
 	FDTCctvSession Session{ FDTCctvSessionParams() };
-	AVFrame* Prime = av_frame_alloc();
+	AVFrame* Prime = DTCctvFFmpeg().av_frame_alloc();
 	if (!TestNotNull(TEXT("실제 소비를 시작할 프레임"), Prime))
 	{
 		return false;
 	}
 	Prime->format = AV_PIX_FMT_YUV420P;
 	Prime->width = Prime->height = 16;
-	if (av_frame_get_buffer(Prime, 32) < 0)
+	if (DTCctvFFmpeg().av_frame_get_buffer(Prime, 32) < 0)
 	{
-		av_frame_free(&Prime);
+		DTCctvFFmpeg().av_frame_free(&Prime);
 		return false;
 	}
 	Session.OutputFrame(Prime);
 	Session.TakeFrame(true);
-	av_frame_free(&Prime);
+	DTCctvFFmpeg().av_frame_free(&Prime);
 	TFuture<bool> Producer = Async(EAsyncExecution::Thread, [&Session]()
 	{
-		AVFrame* Frame = av_frame_alloc();
+		AVFrame* Frame = DTCctvFFmpeg().av_frame_alloc();
 		if (Frame == nullptr)
 		{
 			return false;
 		}
 		Frame->format = AV_PIX_FMT_YUV420P;
 		Frame->width = Frame->height = 16;
-		bool bOk = av_frame_get_buffer(Frame, 32) >= 0;
+		bool bOk = DTCctvFFmpeg().av_frame_get_buffer(Frame, 32) >= 0;
 		for (int32 Index = 0; bOk && Index < 16; ++Index)
 		{
-			bOk = av_frame_make_writable(Frame) >= 0;
+			bOk = DTCctvFFmpeg().av_frame_make_writable(Frame) >= 0;
 			if (bOk)
 			{
 				Frame->data[0][0] = static_cast<uint8>(Index);
 				Session.OutputFrame(Frame);
 			}
 		}
-		av_frame_free(&Frame);
+		DTCctvFFmpeg().av_frame_free(&Frame);
 		return bOk;
 	});
 	const double Deadline = FPlatformTime::Seconds() + 3.0;

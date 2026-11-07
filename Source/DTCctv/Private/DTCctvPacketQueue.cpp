@@ -1,4 +1,5 @@
 #include "DTCctvPacketQueue.h"
+#include "DTCctvFFmpegApi.h"
 
 #include "DTCctvFFmpegInclude.h"
 #include "DTCctvTypes.h"
@@ -25,7 +26,7 @@ void FDTCctvPacketQueue::ClearLocked(bool bCountAsDropped)
 	{
 		AVPacket* Packet = Packets.First();
 		Packets.PopFirst();
-		av_packet_free(&Packet);
+		DTCctvFFmpeg().av_packet_free(&Packet);
 	}
 }
 
@@ -36,7 +37,7 @@ void FDTCctvPacketQueue::Push(AVPacket* Source)
 		std::lock_guard<std::mutex> Lock(Mutex);
 		if (bAborted)
 		{
-			av_packet_unref(Source);
+			DTCctvFFmpeg().av_packet_unref(Source);
 			return;
 		}
 
@@ -53,7 +54,7 @@ void FDTCctvPacketQueue::Push(AVPacket* Source)
 			if (!bKeyFrame)
 			{
 				++DroppedPackets;
-				av_packet_unref(Source);
+				DTCctvFFmpeg().av_packet_unref(Source);
 				return;
 			}
 			bSkipUntilKeyFrame = false;
@@ -62,13 +63,13 @@ void FDTCctvPacketQueue::Push(AVPacket* Source)
 			bDiscontinuity = true;
 		}
 
-		AVPacket* Packet = av_packet_alloc();
+		AVPacket* Packet = DTCctvFFmpeg().av_packet_alloc();
 		if (Packet == nullptr)
 		{
-			av_packet_unref(Source);
+			DTCctvFFmpeg().av_packet_unref(Source);
 			return;
 		}
-		av_packet_move_ref(Packet, Source);
+		DTCctvFFmpeg().av_packet_move_ref(Packet, Source);
 		Packets.EmplaceLast(Packet);
 		PeakPackets = FMath::Max(PeakPackets, Packets.Num());
 	}

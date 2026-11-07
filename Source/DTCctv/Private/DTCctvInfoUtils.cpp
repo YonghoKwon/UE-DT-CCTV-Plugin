@@ -1,4 +1,5 @@
 #include "DTCctvInfoUtils.h"
+#include "DTCctvFFmpegApi.h"
 
 #include "DTCctvPolicies.h"
 
@@ -43,7 +44,7 @@ FString DTCctvDescribeError(int32 Error, bool bDeadlineExpired)
 
 FString DTCctvProfileName(AVCodecID Codec, int32 Profile)
 {
-	const char* Name = avcodec_profile_name(Codec, Profile);
+	const char* Name = DTCctvFFmpeg().avcodec_profile_name(Codec, Profile);
 	return Name != nullptr ? UTF8_TO_TCHAR(Name) : TEXT("미확인");
 }
 
@@ -59,7 +60,7 @@ FString DTCctvLevelName(AVCodecID Codec, int32 Level)
 
 void DTCctvDescribePixelFormat(AVPixelFormat Format, FDTCctvStreamInfo& Info)
 {
-	const AVPixFmtDescriptor* Description = av_pix_fmt_desc_get(Format);
+	const AVPixFmtDescriptor* Description = DTCctvFFmpeg().av_pix_fmt_desc_get(Format);
 	if (Description == nullptr || (Description->flags & AV_PIX_FMT_FLAG_HWACCEL) != 0)
 	{
 		return;
