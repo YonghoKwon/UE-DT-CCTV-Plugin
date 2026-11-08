@@ -72,3 +72,15 @@ P3에서 Claude가 확인할 수 있도록, 끝낼 때 시그널링 서버와 PS
 - P2: 같은 방화벽 창 때문에 실제 창 입력 시험이 남아 있다.
 - P4: Docker Desktop 엔진이 준비되지 않아 Linux 실행 시험이 남아 있다.
 - 재확인 때 시험 RTSP 서버는 `127.0.0.1`에만 열어 방화벽 창이 다시 뜨지 않게 한다(mediamtx `rtspAddress: 127.0.0.1:8554`, 설정 파일은 BOM 없이).
+
+## Claude 재확인 (2026-11-08 18:00~19:00)
+
+시험 RTSP는 mediamtx `127.0.0.1:8554`(TCP만)로 열어 방화벽 창 없이 진행했다.
+
+- **P2 PASS(사용자 직접 조작):** 일반 창에서 주소 4개 추가 → 보기 → 열 전환 → 중지를 사용자가 직접 확인했다. 로그 `P2-claude.log` 기준 4채널 cuda, 약 30fps, 재연결·버림·오류 0. 보기 2회(28.6초, 3.9초)로 "2분 이상" 조건은 채우지 못했다(기록만).
+- **P3 입력:** 브라우저 클릭이 안 되던 원인은 시험 때 붙인 `-RenderOffScreen`이다. 이 인자 없이(배포 `PixelStreaming.bat`과 같음) 실행하면 추가·삭제 클릭이 반영된다. 자동화 도구 클릭은 간헐적으로 누락돼 사용자가 직접 조작했다.
+- **P3 FAIL — 새 결함:** 사용자가 브라우저에서 보기 → 중지를 누르자 스트리밍이 끊기고, 새로고침해도 다시 접속되지 않았다(`P3c-user.log`).
+  - 09:54:57.635 보기 중지 → DTCctv `ReleaseUnused`가 공유 CUDA 장치 해제("사용하지 않는 공유 하드웨어 장치 해제: cuda").
+  - 61ms 뒤 Pixel Streaming NVENC `Failed to lock output bitstream [NVENC 8]`, `CUDA 700`(illegal address). 이후 `Failed to import external memory [CUDA 700]` 1772회.
+  - 이어서 보기 재시작 시 DTCctv의 `cuCtxCreate`도 `CUDA_ERROR_ILLEGAL_ADDRESS`로 실패해 d3d11va로 내려갔다. 재접속 플레이어는 `Could not create encoder` 2만여 회로 영상이 나오지 않았다.
+  - 판단: Pixel Streaming(NVENC/CUDA)과 DTCctv CUDA 디코딩이 한 프로세스에 있을 때, DTCctv의 CUDA 장치 해제가 프로세스의 CUDA 상태를 깨뜨린다. 운영 프로젝트도 Pixel Streaming을 쓰므로 운영 영향 결함이다. 수정은 [CCTV-01Q](CCTV-01Q.md).
