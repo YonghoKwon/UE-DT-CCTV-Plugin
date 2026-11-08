@@ -56,6 +56,10 @@ GPU 환산 근거: NVDEC는 연산·그래픽 엔진과 독립된 디코더이�
 
 ## 현장 점검 방법 (CCTV-01J)
 
+CCTV-01P 테스트 전용 Development 패키지는 이 PC의 `C:\CCTV-TestPackages\2026-11-08\`에 Windows·Linux 폴더와 전달용 zip/tar.gz로 제공합니다. Windows는 `보기.bat`, Linux는 `./view.sh`로 엽니다. **보기**는 추가한 전체 주소를 시간 제한 없이 재생하며 판정·보고서를 만들지 않습니다. 보기 중 주소 편집·시작은 막히고 **중지** 후 다시 사용할 수 있습니다. 기존 **시작**은 시간 제한 점검·보고서를 유지합니다. `-CctvView -CctvCheckList=<보호된 JSON>`으로 자동 보기도 가능합니다.
+
+Pixel Streaming은 시그널링 서버를 먼저 실행한 뒤 `PixelStreaming.bat ws://<서버>:8888` 또는 `./pixelstreaming.sh ws://<서버>:8888`로 연결합니다. H.264를 사용하고 일반 마우스·키보드 입력에 `AllowPixelStreamingCommands`는 켜지 않습니다. 화면 없는 Linux는 `./check-nullrhi.sh <목록 JSON> 135`를 사용합니다. 실행·포트·계정·로그 경로는 동봉 `테스트_안내.md`와 [패키지 안내 원본](TestHost/PackageScripts/테스트_안내.md)을 확인하십시오. 이 패키지는 운영 설치본과 별개이며 실제 UI·PS·Linux 시험 판정은 `Saved/Reports/CCTV-01P/RESULT.md`에 기록합니다.
+
 현장 점검 화면은 운영 프로젝트에 도구를 설치하지 않고 **TestHost 패키지**에서 실행합니다. Windows 실행 파일은 `<패키지>/Windows/DTCctvTestHost/Binaries/Win64/DTCctvTestHost.exe`입니다. 별도 명령줄 인자 없이 실행하면 점검 화면이 열립니다. 현재 PC에서 만든 패키지의 실제 위치와 검증 자료는 `Saved/Reports/CCTV-01J/result.json`에 기록합니다.
 
 1. 메인 RTSP 주소와 필요한 서브 주소를 넣습니다. 사용자 이름·비밀번호를 별도 필드로 넣거나 URL의 userinfo 형식을 사용할 수 있습니다. 입력 필드는 가림 처리되고, **추가** 후 목록에는 계정이 가려진 주소가 보입니다.

@@ -228,7 +228,11 @@ UE 5.3 DX12의 오프스크린 시작에서 플러그인 비활성 대조에도 
 
 ### 9.1 TestHost 연결 점검 도구
 
-점검 도구는 운영 프로젝트에 넣는 플러그인 기능이 아니라 별도 **TestHost 패키지**입니다. CCTV-01Z 정리에서 이전 임시 패키지를 삭제했으므로 보존된 시험 패키지를 별도로 준비하거나, 이후 승인된 작업에서 TestHost를 다시 패키징해야 합니다. 이 문서 작업에서는 만들지 않습니다.
+점검 도구는 운영 프로젝트에 넣는 플러그인 기능이 아니라 별도 **TestHost 패키지**입니다. CCTV-01P에서 새로 만든 Windows·Linux Development 패키지와 zip/tar.gz는 이 PC의 `C:\CCTV-TestPackages\2026-11-08\`에 있습니다. 다른 PC에서는 전달된 압축을 풀고 동봉 `테스트_안내.md`를 따릅니다. [안내 원본](../TestHost/PackageScripts/테스트_안내.md)도 참조할 수 있습니다.
+
+Windows는 `보기.bat`, Linux는 `./view.sh`로 열고 주소를 추가한 뒤 **보기**를 누르면 시간 제한 없이 재생합니다. **중지**로 끝내며 보기 중에는 주소 편집과 시작이 비활성입니다. **시작**은 기존의 시간 제한 점검·판정·보고서를 만듭니다. 보기는 판정·보고서를 만들지 않으며 상태·FPS 등은 화면과 UE 로그에서 확인합니다. `-CctvView -CctvCheckList=<보호된 JSON 경로>`로 목록을 자동 재생할 수 있습니다. 주소 가림·계정 제외 저장은 그대로입니다.
+
+Pixel Streaming은 시그널링 서버를 먼저 실행하고 `PixelStreaming.bat ws://<서버>:8888` 또는 `./pixelstreaming.sh ws://<서버>:8888`로 연결한 뒤 브라우저로 조작합니다. 스크립트는 H.264를 명시하며 일반 키보드·마우스 입력에 `AllowPixelStreamingCommands`를 활성화하지 않습니다. 화면 없는 Linux 점검은 `./check-nullrhi.sh <목록 JSON> 135`입니다. nullrhi의 WARN은 화면 미검증과 구분해 읽습니다. Linux 화면·Pixel Streaming과 실제 운영 프로젝트 적용은 별도 검증 범위입니다. CCTV-01P의 실제 시험 결과는 해당 Saved 보고서를 확인합니다.
 
 1. Windows에서는 다음과 같이 일반 창으로 실행합니다. 인자 없이 실행해도 점검 화면이 열립니다.
 
