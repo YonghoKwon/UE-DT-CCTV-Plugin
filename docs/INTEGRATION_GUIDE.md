@@ -207,7 +207,9 @@ bIgnoreWindowsTimerThrottling=False
 
 ## 8. Pixel Streaming 서버 실행 권장
 
-운영 프로젝트의 기존 PixelStreaming 활성화와 시그널링 설정은 유지합니다. 이 안내서의 실행 예시는 표시·타이머 선택만 설명하며, 실제 Pixel Streaming 송출·인코딩 동시 부하는 미검증입니다.
+운영 프로젝트의 기존 PixelStreaming 활성화와 시그널링 설정은 유지합니다.
+
+**필수 버전:** Pixel Streaming과 함께 쓰는 프로젝트는 커밋 `74dc04a`(CCTV-01Q) 이후 플러그인을 사용합니다. 그 이전 버전은 CUDA 디코딩 채널을 모두 닫을 때 공유 CUDA 장치를 해제해, 동작 중인 Pixel Streaming NVENC 인코더가 `CUDA 700`으로 망가지고 재접속해도 영상이 나오지 않았습니다. 지금은 CUDA 장치를 모듈 종료까지 유지합니다(GPU 메모리 상주, Close/Open 20회 증가 없음 확인). 이 안내서의 실행 예시는 표시·타이머 선택만 설명하며, 실제 Pixel Streaming 송출·인코딩 동시 부하는 미검증입니다.
 
 | 운용 조건 | 선택 |
 |---|---|
