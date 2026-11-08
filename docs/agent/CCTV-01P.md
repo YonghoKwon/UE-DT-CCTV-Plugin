@@ -56,3 +56,12 @@ P3에서 Claude가 확인할 수 있도록, 끝낼 때 시그널링 서버와 PS
 - `Saved/Reports/CCTV-01P/RESULT.md`, `result.json`, `progress.md`(수시 갱신).
 
 완료 보고: 보기 모드 동작 / 패키지 위치와 구성 / P1~P6 판정 / Pixel Streaming 입력 설정과 근거 / 미수행·제한.
+
+## 다운로드 승인 (2026-11-08 사용자 승인)
+
+`Temp\cctv\dl`의 FFmpeg·mediamtx 파일이 사라져(폴더만 남음) 첫 실행이 멈췄다. 사용자가 다음 두 가지 다운로드를 승인했다. 이 둘 외의 다운로드는 여전히 금지다.
+
+- FFmpeg 8.1 Windows 64비트 LGPL 빌드: [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds) 공식 GitHub 릴리스.
+- mediamtx Windows amd64 최신 안정 릴리스: bluenviron/mediamtx 공식 GitHub 릴리스.
+
+받은 파일은 `C:\CCTV-TestPackages\tools\` 아래 각자 새 폴더에 푼다(Temp에 두지 않는다). 릴리스의 체크섬이 있으면 확인하고, 받은 URL·크기·SHA256을 RESULT.md에 기록한다. 두 파일이 합쳐 300MB를 넘으면 받기 전에 멈추고 보고한다. 이 도구들은 정리 대상이 아니다(다음 시험에서 재사용).
