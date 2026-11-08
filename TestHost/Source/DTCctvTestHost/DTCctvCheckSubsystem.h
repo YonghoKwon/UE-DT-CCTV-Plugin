@@ -96,6 +96,7 @@ class UDTCctvCheckSubsystem : public UGameInstanceSubsystem, public FTickableGam
 	void WriteReports();
 	void CloseStreams();
 	void OpenChannels(bool bWriteCsv);
+	void TickViewTest(double Now);
 	FString StateName(EDTCctvState State) const;
 
 	UPROPERTY(Transient)
@@ -125,6 +126,13 @@ class UDTCctvCheckSubsystem : public UGameInstanceSubsystem, public FTickableGam
 	double NextCsv = 0.0;
 	double NextViewLog = 0.0;
 	double CaptureSince = 0.0;
+	int32 ViewTestCycles = 0;
+	int32 ViewTestStops = 0;
+	double ViewTestPlaySeconds = 60.0;
+	double ViewTestPauseSeconds = 5.0;
+	double ViewTestRestartAt = 0.0;
+	double ViewTestFinishAt = 0.0;
+	FString ViewTestTrigger;
 	FString ReportDirectory;
 	FString ScreenshotStatus = TEXT("NOT_RUN");
 	FString StartupError;

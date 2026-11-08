@@ -53,6 +53,13 @@ void UDTCctvCheckSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	FString List;
 	bAutomatic = FParse::Value(Command, TEXT("CctvCheckList="), List);
 	bAutomaticView = FParse::Param(Command, TEXT("CctvView"));
+	FParse::Value(Command, TEXT("CctvViewTestCycles="), ViewTestCycles);
+	FParse::Value(Command, TEXT("CctvViewTestPlaySeconds="), ViewTestPlaySeconds);
+	FParse::Value(Command, TEXT("CctvViewTestPauseSeconds="), ViewTestPauseSeconds);
+	FParse::Value(Command, TEXT("CctvViewTestTrigger="), ViewTestTrigger);
+	ViewTestCycles = FMath::Clamp(ViewTestCycles, 0, 100);
+	ViewTestPlaySeconds = FMath::IsFinite(ViewTestPlaySeconds) ? FMath::Max(10.0, ViewTestPlaySeconds) : 60.0;
+	ViewTestPauseSeconds = FMath::IsFinite(ViewTestPauseSeconds) ? FMath::Max(1.0, ViewTestPauseSeconds) : 5.0;
 	bDisplayAvailable = FApp::CanEverRender() && !FParse::Param(Command, TEXT("nullrhi"));
 	if (!bAutomatic && !bDisplayAvailable)
 	{
@@ -564,7 +571,8 @@ void UDTCctvCheckSubsystem::BuildUI()
 void UDTCctvCheckSubsystem::Tick(float DeltaTime)
 {
 	BuildUI();
-	if (bAutomatic && !bStarted)
+	const bool bTestReady = ViewTestCycles == 0 || ViewTestTrigger.IsEmpty() || IFileManager::Get().FileExists(*ViewTestTrigger);
+	if (bAutomatic && !bStarted && bTestReady)
 	{
 		if (!(bAutomaticView ? StartView() : StartCheck(DurationSeconds)))
 		{
@@ -581,6 +589,7 @@ void UDTCctvCheckSubsystem::Tick(float DeltaTime)
 		}
 	}
 	const double Now = FPlatformTime::Seconds();
+	TickViewTest(Now);
 	if (bViewing)
 	{
 		const double Elapsed = Now - StartSeconds;
@@ -670,6 +679,43 @@ void UDTCctvCheckSubsystem::Tick(float DeltaTime)
 			ScreenshotStatus = TEXT("ENV_BLOCKED");
 			FinalizeReport();
 		}
+	}
+}
+
+void UDTCctvCheckSubsystem::TickViewTest(double Now)
+{
+	if (!bAutomaticView || ViewTestCycles == 0)
+	{
+		return;
+	}
+	if (ViewTestRestartAt > 0.0 && Now >= ViewTestRestartAt)
+	{
+		ViewTestRestartAt = 0.0;
+		if (!StartView())
+		{
+			UE_LOG(LogDTCctvCheck, Error, TEXT("CctvViewTest restart_failed cycle=%d"), ViewTestStops);
+			FPlatformMisc::RequestExitWithStatus(false, 1);
+			return;
+		}
+		UE_LOG(LogDTCctvCheck, Log, TEXT("CctvViewTest restarted cycle=%d"), ViewTestStops);
+		if (ViewTestStops == ViewTestCycles)
+		{
+			ViewTestFinishAt = Now + 10.0;
+		}
+	}
+	if (bViewing && ViewTestStops < ViewTestCycles && Now - StartSeconds >= ViewTestPlaySeconds)
+	{
+		++ViewTestStops;
+		UE_LOG(LogDTCctvCheck, Log, TEXT("CctvViewTest stopping cycle=%d elapsed=%.3f"), ViewTestStops, Now - StartSeconds);
+		StopView();
+		ViewTestRestartAt = Now + ViewTestPauseSeconds;
+	}
+	if (bViewing && ViewTestFinishAt > 0.0 && Now >= ViewTestFinishAt)
+	{
+		UE_LOG(LogDTCctvCheck, Log, TEXT("CctvViewTest complete cycles=%d"), ViewTestStops);
+		ViewTestFinishAt = 0.0;
+		StopView();
+		FPlatformMisc::RequestExit(false);
 	}
 }
 
