@@ -24,6 +24,7 @@ class SDTCctvCheckPanel : public SCompoundWidget
 	void RefreshResults();
 	FReply AddAddress();
 	FReply Start();
+	FReply View();
 	TWeakObjectPtr<UDTCctvCheckSubsystem> Checker;
 	TSharedPtr<SEditableTextBox> MainUrl;
 	TSharedPtr<SEditableTextBox> SubUrl;

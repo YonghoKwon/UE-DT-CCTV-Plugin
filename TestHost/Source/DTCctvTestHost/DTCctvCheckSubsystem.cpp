@@ -52,6 +52,7 @@ void UDTCctvCheckSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	}
 	FString List;
 	bAutomatic = FParse::Value(Command, TEXT("CctvCheckList="), List);
+	bAutomaticView = FParse::Param(Command, TEXT("CctvView"));
 	bDisplayAvailable = FApp::CanEverRender() && !FParse::Param(Command, TEXT("nullrhi"));
 	if (!bAutomatic && !bDisplayAvailable)
 	{
@@ -68,6 +69,10 @@ void UDTCctvCheckSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 void UDTCctvCheckSubsystem::Deinitialize()
 {
 	bAutomatic = false;
+	if (bViewing)
+	{
+		StopView();
+	}
 	if (bRunning)
 	{
 		FinishCheck(true);
@@ -168,6 +173,71 @@ bool UDTCctvCheckSubsystem::StartCheck(double Seconds)
 	bCompleted = false;
 	bStarted = true;
 	ScreenshotStatus = bDisplayAvailable ? TEXT("NOT_RUN") : TEXT("ENV_BLOCKED");
+	OpenChannels(true);
+	bRunning = true;
+	Message = TEXT("점검 중입니다. 초기 10초 뒤의 표시 FPS를 판정합니다.");
+	if (Panel.IsValid())
+	{
+		Panel->Refresh();
+	}
+	return true;
+}
+
+bool UDTCctvCheckSubsystem::StartView()
+{
+	if (!CanStartView())
+	{
+		if (!IsRunning())
+		{
+			Message = TEXT("주소를 먼저 추가하세요.");
+		}
+		return false;
+	}
+	if (!StartupError.IsEmpty())
+	{
+		Message = StartupError;
+		return false;
+	}
+	CloseStreams();
+	Channels.Reset();
+	Streams.Reset();
+	ReportDirectory.Reset();
+	bCompleted = false;
+	bStarted = true;
+	StartSeconds = FPlatformTime::Seconds();
+	NextSnapshot = 0.0;
+	NextViewLog = 0.0;
+	OpenChannels(false);
+	bViewing = true;
+	Message = TEXT("보기 중: 시간 제한·판정·보고서 없음. 주소 편집·시작은 중지 후 사용할 수 있습니다.");
+	UE_LOG(LogDTCctvCheck, Log, TEXT("CctvView started channels=%d. 시간 제한·판정·보고서 없음."), Channels.Num());
+	if (Panel.IsValid())
+	{
+		Panel->Refresh();
+	}
+	return true;
+}
+
+void UDTCctvCheckSubsystem::StopView()
+{
+	if (!bViewing)
+	{
+		return;
+	}
+	UE_LOG(LogDTCctvCheck, Log, TEXT("CctvView stopped elapsed=%.3f channels=%d"), FPlatformTime::Seconds() - StartSeconds, Channels.Num());
+	bViewing = false;
+	CloseStreams();
+	Streams.Reset();
+	Channels.Reset();
+	Message = TEXT("보기를 중지했습니다. 주소를 편집한 뒤 다시 보기를 누르세요. 보고서는 만들지 않았습니다.");
+	if (Panel.IsValid())
+	{
+		Panel->Refresh();
+	}
+}
+
+void UDTCctvCheckSubsystem::OpenChannels(bool bWriteCsv)
+{
 
 	for (const FDTCctvCheckEndpoint& Endpoint : Endpoints)
 	{
@@ -199,18 +269,14 @@ bool UDTCctvCheckSubsystem::StartCheck(double Seconds)
 			Channel.Observation.Error = Error;
 		}
 		Streams.Add(Stream);
-		Channel.CsvPath = ReportDirectory / FString::Printf(TEXT("channel-%02d.csv"), Channels.Num());
-		const FString Header = TEXT("t,state,decoded,displayed,decode_fps,display_fps,reconnects,dropped,errors,superseded,frame_age_"
+		if (bWriteCsv)
+		{
+			Channel.CsvPath = ReportDirectory / FString::Printf(TEXT("channel-%02d.csv"), Channels.Num());
+			const FString Header = TEXT("t,state,decoded,displayed,decode_fps,display_fps,reconnects,dropped,errors,superseded,frame_age_"
 									"latest_ms,frame_age_p95_ms,last_error,queued_packets,peak_queued_packets,read_calls,read_wait_seconds,read_wait_max_seconds,read_gap_max_seconds,packet_push_seconds,packet_push_max_seconds\n");
-		bWriteFailed |= !FFileHelper::SaveStringToFile(Header, *Channel.CsvPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+			bWriteFailed |= !FFileHelper::SaveStringToFile(Header, *Channel.CsvPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+		}
 	}
-	bRunning = true;
-	Message = TEXT("점검 중입니다. 초기 10초 뒤의 표시 FPS를 판정합니다.");
-	if (Panel.IsValid())
-	{
-		Panel->Refresh();
-	}
-	return true;
 }
 
 void UDTCctvCheckSubsystem::CloseStreams()
@@ -226,6 +292,11 @@ void UDTCctvCheckSubsystem::CloseStreams()
 
 void UDTCctvCheckSubsystem::StopCheck()
 {
+	if (bViewing)
+	{
+		StopView();
+		return;
+	}
 	if (bRunning)
 	{
 		FinishCheck(true);
@@ -495,13 +566,13 @@ void UDTCctvCheckSubsystem::Tick(float DeltaTime)
 	BuildUI();
 	if (bAutomatic && !bStarted)
 	{
-		if (!StartCheck(DurationSeconds))
+		if (!(bAutomaticView ? StartView() : StartCheck(DurationSeconds)))
 		{
 			StartupError = Message;
 			bStarted = true;
 			bCompleted = true;
 			StartSeconds = EndSeconds = FPlatformTime::Seconds();
-			if (PrepareReportDirectory())
+			if (!bAutomaticView && PrepareReportDirectory())
 			{
 				WriteReports();
 			}
@@ -510,6 +581,29 @@ void UDTCctvCheckSubsystem::Tick(float DeltaTime)
 		}
 	}
 	const double Now = FPlatformTime::Seconds();
+	if (bViewing)
+	{
+		const double Elapsed = Now - StartSeconds;
+		if (Elapsed >= NextSnapshot)
+		{
+			SnapshotChannels(Elapsed);
+			NextSnapshot = Elapsed + .25;
+		}
+		if (Elapsed >= NextViewLog)
+		{
+			for (int32 Index = 0; Index < Channels.Num(); ++Index)
+			{
+				const FDTCctvStreamStats& Stats = Channels[Index].Observation.Current;
+				UE_LOG(LogDTCctvCheck, Log,
+					TEXT("CctvViewSample t=%.3f channel=%d state=%d decoded=%lld displayed=%lld decode_fps=%.3f display_fps=%.3f decoder=%s reconnects=%d dropped=%lld errors=%lld"),
+					Elapsed, Index + 1, static_cast<int32>(Stats.State), Stats.FramesDecoded, Stats.FramesDisplayed,
+					Stats.DecodeFps, Stats.DisplayFps, *Channels[Index].Observation.Info.DecoderName, Stats.Reconnects,
+					Stats.PacketsDropped, Stats.DecodeErrors);
+			}
+			NextViewLog = Elapsed + 5.0;
+		}
+		return;
+	}
 	if (bRunning)
 	{
 		const double Elapsed = Now - StartSeconds;

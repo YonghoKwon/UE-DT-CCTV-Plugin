@@ -147,6 +147,10 @@ void SDTCctvCheckPanel::Construct(const FArguments& Args)
 																				 .IsEnabled_Lambda(Editable)
 																				 .OnClicked(this, &SDTCctvCheckPanel::Start)] +
 							SHorizontalBox::Slot().AutoWidth().Padding(5, 0)[SNew(SButton)
+								.Text(FText::FromString(TEXT("보기")))
+								.IsEnabled_Lambda([this]() { return Checker.IsValid() && Checker->CanStartView(); })
+								.OnClicked(this, &SDTCctvCheckPanel::View)] +
+							SHorizontalBox::Slot().AutoWidth().Padding(5, 0)[SNew(SButton)
 																				 .Text(FText::FromString(TEXT("중지")))
 																				 .OnClicked_Lambda(
 																					 [this]()
@@ -246,6 +250,15 @@ FReply SDTCctvCheckPanel::Start()
 	if (Checker.IsValid())
 	{
 		Checker->StartCheck(Duration);
+	}
+	return FReply::Handled();
+}
+
+FReply SDTCctvCheckPanel::View()
+{
+	if (Checker.IsValid())
+	{
+		Checker->StartView();
 	}
 	return FReply::Handled();
 }

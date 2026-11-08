@@ -123,4 +123,39 @@ bool FDTCctvCheckLimitTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDTCctvViewStateTest, "DTCctv.Check.ViewStateTransitions",
+	EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::SmokeFilter)
+bool FDTCctvViewStateTest::RunTest(const FString& Parameters)
+{
+	UGameInstance* Instance = NewObject<UGameInstance>();
+	UDTCctvCheckSubsystem* Checker = NewObject<UDTCctvCheckSubsystem>(Instance);
+	TestFalse(TEXT("빈 목록 보기 비활성"), Checker->CanStartView());
+	TestFalse(TEXT("빈 목록 보기 거부"), Checker->StartView());
+	FDTCctvCheckEndpoint Entry;
+	// 형식 오류로 네트워크를 열지 않고 실제 서브시스템 상태 전환을 시험한다.
+	Entry.Url = TEXT("invalid-view-test");
+	TestTrue(TEXT("목록 입력"), Checker->AddEndpoint(Entry));
+	TestTrue(TEXT("목록이 있으면 보기 활성"), Checker->CanStartView());
+	TestTrue(TEXT("보기 시작"), Checker->StartView());
+	TestTrue(TEXT("보기 상태"), Checker->IsViewing() && Checker->IsRunning());
+	TestFalse(TEXT("보기 중 점검 시작 차단"), Checker->StartCheck(60));
+	TestFalse(TEXT("보기 중 중복 보기 차단"), Checker->StartView());
+	TestFalse(TEXT("보기 중 추가 차단"), Checker->AddEndpoint(Entry));
+	Checker->RemoveEndpoint(0);
+	TestEqual(TEXT("보기 중 삭제 차단"), Checker->GetEndpoints().Num(), 1);
+	TestFalse(TEXT("보기 판정 없음"), Checker->HasResults());
+	TestTrue(TEXT("보기 보고서 경로 없음"), Checker->GetReportDirectory().IsEmpty());
+	Checker->StopCheck();
+	TestFalse(TEXT("공통 중지로 보기 종료"), Checker->IsViewing() || Checker->IsRunning());
+	TestEqual(TEXT("중지 뒤 영상 격자 비움"), Checker->GetChannelCount(), 0);
+	TestTrue(TEXT("중지 뒤 재시작 가능"), Checker->CanStartView());
+	TestTrue(TEXT("다시 보기"), Checker->StartView());
+	Checker->StopView();
+	TestFalse(TEXT("보기 전용 중지"), Checker->IsRunning());
+	Checker->RemoveEndpoint(0);
+	TestFalse(TEXT("삭제 뒤 빈 목록 비활성"), Checker->CanStartView());
+	TestFalse(TEXT("중지 뒤에도 결과 없음"), Checker->HasResults());
+	return true;
+}
+
 #endif

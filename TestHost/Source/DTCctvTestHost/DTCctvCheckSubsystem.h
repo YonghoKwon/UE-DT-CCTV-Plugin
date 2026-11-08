@@ -44,11 +44,21 @@ class UDTCctvCheckSubsystem : public UGameInstanceSubsystem, public FTickableGam
 	bool AddEndpoint(const FDTCctvCheckEndpoint& Endpoint);
 	void RemoveEndpoint(int32 Index);
 	bool StartCheck(double Seconds);
+	bool StartView();
+	void StopView();
+	bool CanStartView() const
+	{
+		return !IsRunning() && !Endpoints.IsEmpty();
+	}
+	bool IsViewing() const
+	{
+		return bViewing;
+	}
 	void StopCheck();
 	bool SaveAddresses();
 	bool IsRunning() const
 	{
-		return bRunning || bCapturePending;
+		return bRunning || bViewing || bCapturePending;
 	}
 	const TArray<FDTCctvCheckEndpoint>& GetEndpoints() const
 	{
@@ -85,6 +95,7 @@ class UDTCctvCheckSubsystem : public UGameInstanceSubsystem, public FTickableGam
 	void FinalizeReport();
 	void WriteReports();
 	void CloseStreams();
+	void OpenChannels(bool bWriteCsv);
 	FString StateName(EDTCctvState State) const;
 
 	UPROPERTY(Transient)
@@ -95,8 +106,10 @@ class UDTCctvCheckSubsystem : public UGameInstanceSubsystem, public FTickableGam
 	TSharedPtr<SDTCctvCheckPanel> Panel;
 	bool bEnabled = false;
 	bool bAutomatic = false;
+	bool bAutomaticView = false;
 	bool bStarted = false;
 	bool bRunning = false;
+	bool bViewing = false;
 	bool bCompleted = false;
 	bool bDisplayAvailable = false;
 	bool bWarmupDone = false;
@@ -110,6 +123,7 @@ class UDTCctvCheckSubsystem : public UGameInstanceSubsystem, public FTickableGam
 	double WarmupSeconds = 0.0;
 	double NextSnapshot = 0.0;
 	double NextCsv = 0.0;
+	double NextViewLog = 0.0;
 	double CaptureSince = 0.0;
 	FString ReportDirectory;
 	FString ScreenshotStatus = TEXT("NOT_RUN");
