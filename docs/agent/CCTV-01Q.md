@@ -39,3 +39,11 @@ Pixel Streaming 실행 중 TestHost에서 보기(cuda 디코딩 4채널) → 중
 - `Saved/Reports/CCTV-01Q/RESULT.md`, `result.json`, `progress.md`(수시 갱신). RESULT.md 맨 위에 사용자 재확인용 실행 명령(시그널링 서버, PS 패키지, RTSP 시험 서버 127.0.0.1 전용)을 적는다.
 
 완료 보고: 재현 조건 / 원인과 근거 / 고친 방법 / Q1~Q7 판정과 수치 / 미수행·제한.
+
+## 사용자 요청 반영 (2026-11-09, Claude)
+
+- Linux 실행 스크립트를 `DTCctvTestHost.sh` 하나로 합쳤다(`view.sh`·`pixelstreaming.sh`·`check-nullrhi.sh` 삭제, UE 기본 런처 덮어씀). 모드: 인자 없음=일반 창, `ps [ws://..]`, `view <목록.json>`, `check <목록.json> [초]`. 나머지 인자는 UE로 전달하고, 실행 파일 권한이 없으면 스크립트가 보정한다. 인자 처리는 가짜 실행 파일로 10가지 조합을 확인했다(실제 Linux 실행은 미확인).
+- Linux 전달 파일을 tar.gz 대신 zip으로 바꿨다. Unix 권한을 zip에 기록해 `unzip`으로 풀면 `DTCctvTestHost.sh`·실행 파일·Samples의 .sh가 755로 풀린다(`unzip -Z`로 확인, 기존 tar.gz와 같은 실행 파일 목록).
+- 안내서가 바뀌어 Win64 zip도 다시 만들었다. 시험 실행으로 생긴 `Windows/Engine/Saved`는 지웠다.
+  - `DTCctvTestHost-Win64.zip` 330,711,830바이트, SHA256 `c72b1e0972cba1bd98cddfbbc9a23c4be50655df9babd40bdf5b78034a60e4fb`
+  - `DTCctvTestHost-Linux.zip` 274,726,307바이트, SHA256 `ba41117aeb2fe78b4eec33857133637c4cc82881c76e53d72ff7aaf82a32462c`
