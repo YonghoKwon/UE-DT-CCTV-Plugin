@@ -46,7 +46,8 @@ Pixel Streaming 실행 중 TestHost에서 보기(cuda 디코딩 4채널) → 중
 - Linux 전달 파일을 tar.gz 대신 zip으로 바꿨다. Unix 권한을 zip에 기록해 `unzip`으로 풀면 `DTCctvTestHost.sh`·실행 파일·Samples의 .sh가 755로 풀린다(`unzip -Z`로 확인, 기존 tar.gz와 같은 실행 파일 목록).
 - 안내서가 바뀌어 Win64 zip도 다시 만들었다. 시험 실행으로 생긴 `Windows/Engine/Saved`는 지웠다.
   - `DTCctvTestHost-Win64.zip` 330,712,161바이트, SHA256 `535e922f2e7181db95d2d78478479a4c113ecc16ef426d737f4602d8da210fc9` (화면 없음 안내 반영)
-  - `DTCctvTestHost-Linux.zip` 274,727,364바이트, SHA256 `cc819662f2879b34c7395dbcfaa51375e6c2e57043902025dd8730389205716f` (화면 없음 안내 반영)
+  - `DTCctvTestHost-Linux.zip` 274,727,468바이트, SHA256 `917c66925140f59c3680033ba960742b1c40030a83438adc742b6106b6f0f05b` (다른 계정 화면 접근 안내 반영)
 - 사용자가 Linux에서 실행 시 `Refusing to run with the root privileges.` 후 abort를 보고했다. UE 5.3 `UnixPlatformMemory.cpp`가 x86-64에서 컴파일 시점에 root 실행을 막는다(런타임 인자 없음, 설치형 엔진이라 정의 변경 불가). 스크립트가 root면 안내를 출력하고 종료하도록 했다. 일반 계정으로 실행해야 한다.
 - 0c70241의 root 확인 추가 때 `cd -- "$(dirname` 사이 공백이 빠져 스크립트가 폴더를 찾지 못하는 결함이 있었다(사용자는 그 이전 버전으로 실행해 영향 없음). 이번에 고쳤다.
 - 사용자가 화면 없는 Linux에서 인자 없이 실행해 `SDL: No available video device`, `CreateLinuxApplication() InitSDL() failed`로 종료됐다. 창 모드는 화면이 필요하다. 스크립트가 화면(DISPLAY/WAYLAND_DISPLAY)이 없으면 창·view 모드는 안내 후 종료하고, `ps` 모드는 `-RenderOffScreen`을 자동으로 붙인다. Linux `-RenderOffScreen`의 브라우저 클릭은 아직 미확인(사용자 확인 필요). 인자 처리는 가짜 실행 파일로 9가지 조합을 확인했다.
+- 사용자 서버는 화면이 있는 Linux였다. root 문제로 다른 계정(su)으로 실행하면 DISPLAY가 넘어가지 않고 X 접근 권한도 없어 같은 SDL 오류가 난다. 스크립트 안내에 `xhost +SI:localuser:<계정>`과 `DISPLAY=:0` 실행을 추가했다.

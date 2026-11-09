@@ -50,6 +50,8 @@ need_display() {
   ./DTCctvTestHost.sh ps ws://서버:8888        # Pixel Streaming(화면 없이 자동으로 -RenderOffScreen)
   ./DTCctvTestHost.sh check <목록.json> [초]     # 디코딩 점검(-nullrhi)
 서버에 모니터·데스크톱이 있으면 그 데스크톱 터미널에서 실행하세요.
+다른 계정(su)으로 실행한다면 데스크톱 로그인 계정에서 먼저 'xhost +SI:localuser:<실행계정>'을 한 뒤
+  DISPLAY=:0 ./DTCctvTestHost.sh   로 실행하세요(:0이 아니면 데스크톱에서 'echo $DISPLAY'로 확인).
 MSG
     exit 1
 }
