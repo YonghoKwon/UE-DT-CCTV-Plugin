@@ -45,5 +45,6 @@ Pixel Streaming 실행 중 TestHost에서 보기(cuda 디코딩 4채널) → 중
 - Linux 실행 스크립트를 `DTCctvTestHost.sh` 하나로 합쳤다(`view.sh`·`pixelstreaming.sh`·`check-nullrhi.sh` 삭제, UE 기본 런처 덮어씀). 모드: 인자 없음=일반 창, `ps [ws://..]`, `view <목록.json>`, `check <목록.json> [초]`. 나머지 인자는 UE로 전달하고, 실행 파일 권한이 없으면 스크립트가 보정한다. 인자 처리는 가짜 실행 파일로 10가지 조합을 확인했다(실제 Linux 실행은 미확인).
 - Linux 전달 파일을 tar.gz 대신 zip으로 바꿨다. Unix 권한을 zip에 기록해 `unzip`으로 풀면 `DTCctvTestHost.sh`·실행 파일·Samples의 .sh가 755로 풀린다(`unzip -Z`로 확인, 기존 tar.gz와 같은 실행 파일 목록).
 - 안내서가 바뀌어 Win64 zip도 다시 만들었다. 시험 실행으로 생긴 `Windows/Engine/Saved`는 지웠다.
-  - `DTCctvTestHost-Win64.zip` 330,711,830바이트, SHA256 `c72b1e0972cba1bd98cddfbbc9a23c4be50655df9babd40bdf5b78034a60e4fb`
-  - `DTCctvTestHost-Linux.zip` 274,726,307바이트, SHA256 `ba41117aeb2fe78b4eec33857133637c4cc82881c76e53d72ff7aaf82a32462c`
+  - `DTCctvTestHost-Win64.zip` 330,711,954바이트, SHA256 `d4660e296bf8bfe319f7c18509437707d5295513ff4fa1a662dcd486914ba710` (root 안내 반영)
+  - `DTCctvTestHost-Linux.zip` 274,726,750바이트, SHA256 `88c4778b3b891c206b0a89f9e5cd57fb954f36f67d496f69c506b4912e169b94` (root 안내 반영)
+- 사용자가 Linux에서 실행 시 `Refusing to run with the root privileges.` 후 abort를 보고했다. UE 5.3 `UnixPlatformMemory.cpp`가 x86-64에서 컴파일 시점에 root 실행을 막는다(런타임 인자 없음, 설치형 엔진이라 정의 변경 불가). 스크립트가 root면 안내를 출력하고 종료하도록 했다. 일반 계정으로 실행해야 한다.

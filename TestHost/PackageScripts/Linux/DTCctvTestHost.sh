@@ -9,7 +9,20 @@
 # 모드 뒤의 나머지 인자는 UE에 그대로 전달한다. 모드 없이 '-'로 시작하는 인자만 주면 일반 창에 전달한다.
 set -euo pipefail
 
-root="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)"
+# UE는 Linux에서 root 실행을 엔진 차원에서 거부한다(UnixPlatformMemory.cpp). 알아보기 힘든 abort 대신 안내하고 멈춘다.
+if [ "$(id -u)" -eq 0 ]; then
+    cat >&2 <<'MSG'
+[DTCctvTestHost] root 계정으로는 실행할 수 없습니다(Unreal Engine 제한).
+일반 계정으로 실행하세요. 예:
+  useradd -m cctv                                   # 일반 계정이 없을 때 한 번
+  chown -R cctv:cctv "<이 폴더>"                     # root로 압축을 풀었다면 한 번
+  su - cctv -c 'cd "<이 폴더>" && ./DTCctvTestHost.sh ps ws://서버:8888'
+sudo로 실행했다면 sudo 없이 실행하세요.
+MSG
+    exit 1
+fi
+
+root="$(cd --"$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)"
 bin="$root/DTCctvTestHost/Binaries/Linux"
 exe="$bin/DTCctvTestHost"
 
